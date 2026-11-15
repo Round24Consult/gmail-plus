@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Gmail Plus (dev)",
+  "short_name": "Gmail Plus",
+  "version": "0.0.0",
+  "description": "Quick-reply templates, a light pipeline, follow-up reminders, contact export and mail merge inside Gmail. Runs locally.",
+  "icons": { "16": "icons/16.png", "48": "icons/48.png", "128": "icons/128.png" },
+  "action": {
+    "default_title": "Gmail Plus",
+    "default_popup": "popup.html",
+    "default_icon": { "16": "icons/16.png", "48": "icons/48.png" }
+  },
+  "options_ui": { "page": "options.html", "open_in_tab": true },
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://mail.google.com/*"],
+      "js": ["content.js"],
+      "css": ["gp.css"],
+      "run_at": "document_end"
+    }
+  ],
+  "permissions": ["scripting", "storage", "unlimitedStorage", "alarms", "notifications"],
+  "host_permissions": ["https://mail.google.com/"],
+  "web_accessible_resources": [
+    { "resources": ["icons/*.svg", "icons/*.png"], "matches": ["https://mail.google.com/*"] }
+  ]
+}

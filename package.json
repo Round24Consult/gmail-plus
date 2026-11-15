@@ -1,0 +1,39 @@
+{
+  "name": "gmail-plus",
+  "version": "0.1.0",
+  "description": "Templates, a light pipeline, follow-ups, CSV export and mail merge inside Gmail.",
+  "author": "Round24 Consult",
+  "license": "UNLICENSED",
+  "homepage": "https://github.com/Round24Consult/gmail-plus#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Round24Consult/gmail-plus.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node build.mjs --watch",
+    "build": "node build.mjs",
+    "build:prod": "node build.mjs --prod",
+    "package": "node build.mjs --prod && node scripts/package.mjs",
+    "icons": "node scripts/make-icons.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@inboxsdk/core": "^2.2.35",
+    "kefir": "^3.8.8",
+    "papaparse": "^5.7.1",
+    "preact": "^11.2.0"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.7",
+    "@types/papaparse": "^5.5.2",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}

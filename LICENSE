@@ -1,0 +1,12 @@
+Copyright (c) 2026 Round24 Consult. All rights reserved.
+
+This software and its source code are proprietary and confidential to Round24 Consult.
+No part of it may be copied, modified, distributed, sublicensed or used, in whole or in
+part, without prior written permission from Round24 Consult.
+
+Third-party components remain under their own licences, including:
+  - InboxSDK (@inboxsdk/core): MIT or Apache-2.0
+  - Preact: MIT
+  - Papa Parse: MIT
+  - Kefir: MIT
+A production build lists bundled third-party notices in dist/content.js.LEGAL.txt.
