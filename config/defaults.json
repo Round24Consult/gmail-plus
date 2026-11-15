@@ -2,7 +2,7 @@
   "appName": "Gmail Plus",
   "appShortName": "Gmail Plus",
   "appSlug": "gmail-plus",
-  "appDescription": "Quick-reply templates, a light pipeline, follow-up reminders, contact export and mail merge inside Gmail. Runs locally.",
+  "appDescription": "Reply templates, a pipeline, follow-up reminders, mail merge and WhatsApp follow-ups inside Gmail. Runs locally.",
   "inboxSdkAppId": "",
   "supportEmail": "",
   "homepageUrl": "https://github.com/Round24Consult/gmail-plus",
@@ -19,5 +19,17 @@
     "sweepMinutes": 15,
     "reminderHour": 9
   },
-  "defaultPlaybooks": []
+  "defaultPlaybooks": [],
+  "connectors": {
+    "available": [
+      "whatsapp"
+    ],
+    "defaultCountry": "",
+    "defaultMessage": "Hi {{firstName|there}}, following up on my email about {{subject|our conversation}}. Happy to continue here if that's easier.\n\n{{myName}}",
+    "offerAfterSend": true
+  },
+  "people": {
+    "remember": true,
+    "maxRemembered": 3000
+  }
 }

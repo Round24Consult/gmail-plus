@@ -1,44 +1,16 @@
-import type { LabelDescriptor, MessageView, ThreadView } from '@inboxsdk/core';
+import type { LabelDescriptor, ThreadView } from '@inboxsdk/core';
 import * as Kefir from 'kefir';
 import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { APP_NAME, ROUTES } from '../../config';
 import { stagesFor, textColorFor } from '../../lib/playbooks';
 import { threadKey } from '../../lib/storage';
-import type { Contact, Stage, StoreData, TrackedThread } from '../../lib/types';
+import type { Stage, StoreData, TrackedThread } from '../../lib/types';
 import { getData, store, subscribe, useData } from '../../shared/live';
 import { formatDate, morningIn, relativeDue } from '../../shared/time';
 import { iconUrl, sendToBackground, type Ctx } from '../context';
+import { detectContact, safeSender } from '../threadContact';
 import { Board } from '../ui/Board';
-
-function safeSender(m: MessageView): { name: string; emailAddress: string } | null {
-  try {
-    const s = m.getSender();
-    return s?.emailAddress ? s : null;
-  } catch {
-    return null;
-  }
-}
-
-/** The other person in the thread: the latest sender who isn't me, else someone I wrote to. */
-export function detectContact(threadView: ThreadView, me: string): Contact | null {
-  const messages = threadView.getMessageViewsAll();
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const s = safeSender(messages[i]!);
-    if (s && s.emailAddress.toLowerCase() !== me) return { name: s.name ?? '', email: s.emailAddress };
-  }
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i]!;
-    try {
-      if (!m.isLoaded()) continue;
-      const r = m.getRecipients().find((x) => x.emailAddress.toLowerCase() !== me);
-      if (r) return { name: r.name ?? '', email: r.emailAddress };
-    } catch {
-      // collapsed or unloaded message
-    }
-  }
-  return null;
-}
 
 export function stageOf(data: StoreData, t: TrackedThread | undefined | null): Stage | undefined {
   return t ? data.stages.find((s) => s.id === t.stageId) : undefined;

@@ -28,3 +28,13 @@ export function morningIn(days: number, now = Date.now(), hour = CONFIG.followUp
 export function formatDate(ts: number): string {
   return new Date(ts).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
+
+/** "just now", "5 min. ago", "2 hr. ago", "3 days ago" in the browser's language. */
+export function timeAgo(ts: number, now = Date.now()): string {
+  const sec = Math.round((now - ts) / 1000);
+  if (sec < 60) return 'just now';
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto', style: 'short' });
+  if (sec < 3600) return rtf.format(-Math.round(sec / 60), 'minute');
+  if (sec < 86_400) return rtf.format(-Math.round(sec / 3600), 'hour');
+  return rtf.format(-Math.round(sec / 86_400), 'day');
+}

@@ -2,7 +2,7 @@ import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { loadConfig, validatePlaybook } from '../scripts/load-config.mjs';
+import { loadConfig, validatePeople, validatePlaybook } from '../scripts/load-config.mjs';
 import { CONFIG } from '../src/config';
 
 const ROOT = join(__dirname, '..');
@@ -87,8 +87,33 @@ describe('loadConfig', () => {
     [{ APP_SLUG: 'Not A Slug' }, /appSlug/],
     [{ DEFAULT_PLAYBOOKS: 'nope' }, /no playbooks\/nope.json/],
     [{ PLAYBOOKS: 'nope' }, /PLAYBOOKS lists "nope"/],
+    [{ CONNECTORS: 'whatsapp,carrier-pigeon' }, /no src\/lib\/connectors\/catalog\/carrier-pigeon.ts/],
+    [{ CONNECTORS: 'whatsapp,whatsapp' }, /twice/],
+    [{ DEFAULT_COUNTRY: 'XX' }, /defaultCountry/],
+    [{ DEFAULT_COUNTRY: 'Britain' }, /defaultCountry/],
+    [{ CONNECTOR_MESSAGE: 'x'.repeat(4001) }, /defaultMessage/],
   ])('rejects %j', (env, message) => {
     expect(() => loadConfig({ root: fixture(), env })).toThrow(message);
+  });
+
+  it('configures connectors from the environment', () => {
+    const { config } = loadConfig({
+      root: fixture(),
+      env: { CONNECTORS: 'whatsapp', DEFAULT_COUNTRY: 'ng', CONNECTOR_MESSAGE: 'Hello {{firstName}}\\n\\n{{myName}}' },
+    });
+    expect(config.connectors).toMatchObject({ available: ['whatsapp'], defaultCountry: 'NG', defaultMessage: 'Hello {{firstName}}\n\n{{myName}}' });
+  });
+
+  it('validates the recipient address book settings', () => {
+    expect(validatePeople({ remember: true, maxRemembered: 3000 })).toEqual([]);
+    expect(validatePeople({ remember: 'yes', maxRemembered: 50 }).join(' ')).toMatch(/remember.*maxRemembered/s);
+    expect(validatePeople(undefined).join(' ')).toMatch(/people is required/);
+    expect(CONFIG.people).toEqual({ remember: true, maxRemembered: 3000 });
+  });
+
+  it('ships no connectors with CONNECTORS=none', () => {
+    const { config } = loadConfig({ root: fixture(), env: { CONNECTORS: 'none' } });
+    expect(config.connectors.available).toEqual([]);
   });
 
   it('reports a broken playbook file by name', () => {
@@ -100,6 +125,7 @@ describe('loadConfig', () => {
   it('feeds the same defaults to the app during tests', () => {
     expect(CONFIG.playbooks.length).toBe(3);
     expect(CONFIG.mailMerge.maxDailyCap).toBe(400);
+    expect(CONFIG.connectors).toMatchObject({ available: ['whatsapp'], defaultCountry: '', offerAfterSend: true });
   });
 });
 

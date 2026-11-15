@@ -37,4 +37,22 @@ export interface AppConfig {
   /** Playbooks switched on at first run. Empty means all of them. */
   defaultPlaybooks: string[];
   playbooks: PlaybookSeed[];
+  /** The local address book behind recipient search in mail merge. */
+  people: {
+    /** Remember people from conversations the user views and emails, for recipient search. Users can change it. */
+    remember: boolean;
+    /** Most people kept per Gmail account; the least recently seen are dropped first. */
+    maxRemembered: number;
+  };
+  /** Other apps users can message their contacts on. See docs/CONNECTORS.md. */
+  connectors: {
+    /** Connector ids this build ships, in display order. Each one is src/lib/connectors/catalog/<id>.ts. */
+    available: string[];
+    /** ISO 3166 code (GB, US, NG…) for phone numbers written without a country code, or ''. Users can change it. */
+    defaultCountry: string;
+    /** Text the message box starts with. Template variables work. Users can change it. */
+    defaultMessage: string;
+    /** After an email goes to someone with a saved number, offer to message them too. Users can change it. */
+    offerAfterSend: boolean;
+  };
 }

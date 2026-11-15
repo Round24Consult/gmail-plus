@@ -11,7 +11,7 @@ backend: all state lives in `chrome.storage.local`.
 |---|---|---|---|
 | `content.js` | `src/content/index.tsx` | Gmail tab (isolated world) | Loads InboxSDK, registers every feature, renders Preact UI into InboxSDK views |
 | `pageWorld.js` | `@inboxsdk/core/pageWorld.js` (copied unchanged) | Gmail tab (page world) | InboxSDK's in-page half; reads Gmail's own data |
-| `background.js` | `src/background/index.ts` | Service worker | Runs `@inboxsdk/core/background.js`, which injects `pageWorld.js` with `chrome.scripting`; owns alarms, notifications, opening settings |
+| `background.js` | `src/background/index.ts` | Service worker | Runs `@inboxsdk/core/background.js`, which injects `pageWorld.js` with `chrome.scripting`; owns alarms, notifications, opening settings, and opening connector links |
 | `options.js` | `src/options/index.tsx` | Extension page | Settings, template editor, backup and restore |
 | `popup.js` | `src/popup/index.tsx` | Extension page | Toolbar popup |
 
@@ -25,7 +25,8 @@ file, validates the result and returns an `AppConfig` (`src/configTypes.ts`). `b
 global `__GP_CONFIG__`, which `src/config.ts` exposes as `CONFIG`. `vitest.config.mjs` injects the committed defaults
 the same way, so tests see a real config without a build. Branding also goes into `manifest.json` and the `%APP_NAME%`
 placeholders in the HTML pages. See [CONFIGURATION.md](CONFIGURATION.md).
- All bundles are IIFE (content scripts can't be ES modules). `static/` is copied as-is; the build writes the version
+
+All bundles are IIFE (content scripts can't be ES modules). `static/` is copied as-is; the build writes the version
 from `package.json` into the manifest, and dev builds add `*.map` to `web_accessible_resources` so DevTools can load
 source maps.
 
@@ -34,7 +35,7 @@ source maps.
 │ pageWorld.js  ◄── injected by ────────────┼──────┤ background.js                  │
 │      ▲  (InboxSDK page half)              │      │  • InboxSDK loader             │
 │      │                                    │      │  • alarms → notifications      │
-│ content.js (InboxSDK + Preact UI)         │─msg─►│  • open settings tab           │
+│ content.js (InboxSDK + Preact UI)         │─msg─►│  • open settings / connectors  │
 │      │                                    │      └───────────────┬────────────────┘
 └──────┼────────────────────────────────────┘                      │
        │            chrome.storage.local  (single source of truth) │
@@ -49,14 +50,16 @@ Defined in `src/lib/types.ts`, read and written through `Store` in `src/lib/stor
 
 | Storage key | Shape | Notes |
 |---|---|---|
-| `schemaVersion` | number | Currently 2. `migrate()` refuses data from a newer version and upgrades older data |
-| `settings` | `Settings` | Active playbooks, onboarded flag, daily cap, send interval, your name. Always passed through `sanitizeSettings()`, which clamps to the configured limits and drops unknown playbooks |
+| `schemaVersion` | number | Currently 3. `migrate()` refuses data from a newer version and upgrades older data |
+| `settings` | `Settings` | Active playbooks, onboarded flag, daily cap, send interval, your name, and `connectors` (switched-off connectors, default country, chosen targets, default message, after-send offer). Always passed through `sanitizeSettings()`, which clamps to the configured limits and drops unknown playbooks |
 | `playbooks` | `Playbook[]` | Bundled (`builtIn: true`) and user-created playbooks: id, name, blurb |
 | `seededPlaybooks` | `string[]` | Bundled playbook ids already added once, so a deleted one isn't re-added and a newly shipped one is added on update |
 | `templates` | `Template[]` | Starter templates are seeded per playbook. `playbookId` is a playbook id or `custom` |
 | `stages` | `Stage[]` | Seeded per playbook, then freely edited in Settings. Ids are `<playbook>:<key>` for bundled stages and `<playbook>:<random>` for added ones |
 | `thread:<account>:<threadId>` | `TrackedThread` | One key per tracked conversation, so two tabs editing different threads never overwrite each other |
-| `campaign:<id>` | `Campaign` | One key per mail merge: rows, cursor, log, status, heartbeat, in-flight row |
+| `contact:<account>:<email>` | `ContactCard` | One key per person with a saved address or connector history: `handles` by address kind (`phone`), `lastReached` by connector. Shared by every conversation with that person |
+| `campaign:<id>` | `Campaign` | One key per mail merge: rows, cursor, log, status, heartbeat, in-flight row, and the connector follow-up message |
+| `people:<account>` | `Person[]` | The recipient-search address book: email, name, last seen, how often seen. Capped at `people.maxRemembered`. Kept out of `StoreData`: screens read it on demand, and live updates ignore changes to it |
 | `sendCounter` | `{ date, count }` | Merge and test sends for the local calendar day |
 
 Threads are keyed by Gmail account (lower-cased) plus InboxSDK's thread id, and every screen filters by the signed-in
@@ -68,6 +71,7 @@ account. `migrate()` drops malformed entries instead of failing, so a hand-edite
 |---|---|---|
 | 1 | First release, fixed playbooks | – |
 | 2 | Playbooks become data (`playbooks`, `seededPlaybooks`); user playbooks and stage editing | v1 stores get the bundled playbooks as data; stages, templates, threads and settings are kept |
+| 3 | Contact cards (`contact:` keys) and connector settings | Settings get connector defaults; there are no contact cards yet. Older versions refuse v3 backups rather than dropping contacts |
 
 ### Playbook and stage editing
 
@@ -82,7 +86,8 @@ account. `migrate()` drops malformed entries instead of failing, so a hand-edite
 ### Live updates
 
 `src/shared/live.ts` keeps one in-memory copy of the store per page. It reloads on `chrome.storage.onChanged`, debounced
-by 30 ms, and notifies subscribers. Preact components use the `useData()` hook, and inbox badges subscribe through a
+by 30 ms, and notifies subscribers. Changes that only touch `people:` keys are ignored, because the address book changes
+often while browsing and isn't part of the store. Preact components use the `useData()` hook, and inbox badges subscribe through a
 Kefir stream. A change in any tab, the settings page or the background therefore shows everywhere within a moment.
 
 ## Features and their InboxSDK hooks
@@ -96,6 +101,11 @@ Kefir stream. A change in any tab, the settings page or the background therefore
 | Board | `ui/Board.tsx` | `Router.handleCustomRoute`, `NavMenu.addNavItem`, `Router.goto(NativeRouteIDs.THREAD)` |
 | Contact export | `features/export.ts` | `Toolbars.registerThreadButton({ positions: ['LIST'] })`, `ThreadRowView.getContacts` |
 | Mail merge | `ui/MergeWizard.tsx`, `mergeRunner.ts` | `Compose.openNewComposeView`, `setToRecipients`, `setBodyHTML`, `send`, compose events `sending`, `sent`, `sendCanceled`, `destroy` |
+| Contact panel | `features/connectors.tsx`, `ui/ContactPanel.tsx` | `ThreadView.addSidebarContentPanel`, `getSubject` |
+| After-send card | `features/connectors.tsx`, `ui/AfterSendOffer.tsx` | compose events `presending` (read To and subject) and `sent`; merge composes are skipped |
+| Merge follow-ups | `ui/ReachList.tsx` | none (reads the campaign and contact cards) |
+| Recipient address book | `features/people.ts` | `Lists.registerThreadRowViewHandler` (`getContacts`), `Conversations.registerMessageViewHandler` (sender, recipients), compose `presending` (To, Cc, Bcc). Sightings are batched and written at most every 10 s |
+| Recipient search | `ui/RecipientPicker.tsx`, `lib/people.ts` | none (searches the address book, contact cards, pipeline and earlier merges) |
 | Theme | `theme.ts` | `Router.handleAllRoutes` (re-check on navigation) |
 
 InboxSDK is loaded with `globalErrorLogging: false` and `eventTracking: false`, so it reports nothing to
@@ -151,6 +161,18 @@ be unit-tested with a fake clock.
 | Leaving the page mid-merge | A `beforeunload` prompt while a merge is running |
 | Exceeding Gmail limits | Daily cap (hard ceiling 400) and minimum 10 s interval, both clamped in `sanitizeSettings()` |
 
+## Connectors
+
+Connectors (WhatsApp today) are described in [CONNECTORS.md](CONNECTORS.md). In short:
+
+- `src/lib/connectors/` keeps address kinds (`phone`), connectors (`catalog/<id>.ts`) and delivery apart. The registry
+  says which connectors this build ships (`CONFIG.connectors.available`) and which the user has switched on.
+- Every UI entry point calls `reachOut()` in `src/content/reach.ts`. It sends `gp:open-connector` to the background,
+  which validates the connector and address, builds the link itself, checks it is HTTPS on the connector's own hosts, and
+  opens it in the tab that connector used last.
+- Mail merge saves valid numbers from the list on each contact card after the email is sent, without replacing numbers
+  the user saved.
+
 ## Templates
 
 `src/lib/template.ts`:
@@ -168,8 +190,9 @@ be unit-tested with a fake clock.
 - No remote code: everything is bundled, as Manifest V3 requires.
 - Host permission is limited to `https://mail.google.com/`. Web-accessible resources are limited to icons (and source
   maps in dev builds).
-- The background only acts on messages from the extension's own content script (`gp:` message types) and only opens the
-  extension's settings page or creates alarms.
+- The background only acts on messages from the extension's own pages and content script (`gp:` message types). It opens
+  the extension's settings page, creates alarms, or opens a connector link that it builds itself and checks against the
+  connector's HTTPS host list. It never opens a URL taken from a message.
 - CSV export neutralises formula-like cells (OWASP CSV injection).
 - The preview pane uses `dangerouslySetInnerHTML` only with output from `renderHtml()`, which is fully escaped.
 
@@ -180,6 +203,6 @@ be unit-tested with a fake clock.
 3. Render UI with Preact into the element InboxSDK gives you, and unmount it on the view's `destroy` event.
 4. Scope CSS under `.gp-root` with `gp-` class names in `static/gp.css`, using the theme tokens so dark mode works.
 5. If you add stored data, extend `types.ts`, `migrate()` and the backup round-trip test. Bump `SCHEMA_VERSION` if old
-   data needs converting, and add a row to the schema history above.
+   data needs converting or older versions shouldn't load it, and add a row to the schema history above.
 6. Anything a deployer might want to change belongs in configuration, not in code (see
    [CONFIGURATION.md](CONFIGURATION.md#adding-a-setting)).

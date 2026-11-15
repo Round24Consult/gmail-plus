@@ -1,6 +1,6 @@
 # Configuration
 
-Nothing about branding, limits or playbooks is hardcoded. A build combines four sources, later ones winning:
+Nothing about branding, limits, playbooks or connectors is hardcoded. A build combines four sources, later ones winning:
 
 1. **`config/defaults.json`**: committed defaults
 2. **`.env`** in the project root: your local values (git-ignored; start from `.env.example`)
@@ -62,6 +62,28 @@ The values must satisfy `1 ≤ defaultDailyCap ≤ maxDailyCap ≤ 2000` and
 Users can still switch playbooks on and off, edit stages and create their own in Settings. These settings only decide
 what ships and what is on by default.
 
+### Recipient search
+
+| Variable | Config key | Default | What it does |
+|---|---|---|---|
+| *(file only)* | `people.remember` | `true` | Whether new installs remember people from conversations and sent emails for mail merge recipient search. Users can change it in Settings → Your data |
+| *(file only)* | `people.maxRemembered` | `3000` | Most people kept per Gmail account (100 to 20000). The least recently seen are dropped first |
+
+### Connectors
+
+| Variable | Config key | Default | What it does |
+|---|---|---|---|
+| `CONNECTORS` | `connectors.available` | `["whatsapp"]` | Comma-separated connector ids to ship, in display order. Each must exist as `src/lib/connectors/catalog/<id>.ts`. `none` ships no connectors and hides the Contact panel, the after-send card and the WhatsApp buttons |
+| `DEFAULT_COUNTRY` | `connectors.defaultCountry` | *(empty)* | Two-letter country code (`GB`, `US`, `NG`…) for phone numbers written without a country code. Empty means numbers need one. Users can change it |
+| `CONNECTOR_MESSAGE` | `connectors.defaultMessage` | a short follow-up | The text the WhatsApp message box starts with, up to 4,000 characters. Template variables work. In an environment variable, `\n` means a new line. Users can change it |
+| *(file only)* | `connectors.offerAfterSend` | `true` | Whether the "message them too?" card appears after sending an email to someone with a saved number. Users can change it |
+
+Like the mail merge defaults, these are written into each browser's settings when the extension is installed (or first
+updated to 0.3.0). After that, the user's settings are kept: a later build with a different `DEFAULT_COUNTRY` or
+`CONNECTOR_MESSAGE` changes new installs only. Users can change all of them in Settings → Connectors, and **Reset** puts
+the message back to the build's default. `CONNECTORS` is different: it decides what the build contains, so it applies on
+every update. See [CONNECTORS.md](CONNECTORS.md) for how connectors work and how to add one.
+
 ## Examples
 
 A local build with your registered app id (`.env`):
@@ -76,6 +98,20 @@ A white-label build for a recruiting agency:
 ```bash
 APP_NAME="Hire Desk for Gmail" APP_SHORT_NAME="Hire Desk" APP_SLUG=hire-desk \
 PLAYBOOKS=recruiter MERGE_MAX_DAILY_CAP=2000 npm run package
+```
+
+A build for a Nigerian shop, with local phone numbers and its own WhatsApp message:
+
+```dotenv
+PLAYBOOKS=support
+DEFAULT_COUNTRY=NG
+CONNECTOR_MESSAGE="Hello {{firstName|there}}, this is {{myName}}. I've just emailed you about {{subject|your order}}.\n\nReply here any time."
+```
+
+A build without connectors:
+
+```bash
+CONNECTORS=none npm run package
 ```
 
 ## CI

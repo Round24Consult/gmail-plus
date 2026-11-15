@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { CONFIG } from '../../config';
-import { parseRecipientCsv, toCsv, type ParsedRecipients } from '../../lib/csv';
+import { addressKindsFor, enabledConnectors } from '../../lib/connectors/registry';
+import { addressColumn } from '../../lib/connectors/rows';
+import { isValidEmail, parseRecipientCsv, toCsv, type ParsedRecipients } from '../../lib/csv';
 import { stagesFor, templatesFor } from '../../lib/playbooks';
-import { dayKey } from '../../lib/storage';
+import { parseAddressList } from '../../lib/people';
+import { contactKey, dayKey } from '../../lib/storage';
 import { buildContext, render, renderHtml } from '../../lib/template';
 import type { Campaign, StoreData } from '../../lib/types';
+import { ConnectorIcon } from '../../shared/ConnectorIcon';
 import { downloadText } from '../../shared/download';
 import { store, useData } from '../../shared/live';
 import { formatDate } from '../../shared/time';
@@ -21,6 +25,15 @@ import {
   sendViaCompose,
   stopActive,
 } from '../mergeRunner';
+import { ReachList, reachColumns } from './ReachList';
+import { RecipientPicker, type Picked } from './RecipientPicker';
+
+type RecipientSource = 'search' | 'file' | 'paste';
+const SOURCES: Array<{ id: RecipientSource; label: string }> = [
+  { id: 'search', label: 'Search contacts' },
+  { id: 'file', label: 'Upload CSV' },
+  { id: 'paste', label: 'Paste a list' },
+];
 
 const MAX_ROWS = CONFIG.mailMerge.maxRecipients;
 
@@ -102,8 +115,12 @@ function statusLabel(c: Campaign, now: number): string {
 function PastCampaigns({ ctx, data }: { ctx: Ctx; data: StoreData }) {
   const run = useRun();
   const now = useClock(5000);
+  const [reach, setReach] = useState<{ campaignId: string; connectorId: string } | null>(null);
   const list = data.campaigns.filter((c) => c.account === ctx.account);
+  const connectors = enabledConnectors(data.settings.connectors);
   if (!list.length) return null;
+  const reachCampaign = reach ? list.find((c) => c.id === reach.campaignId) : undefined;
+  const reachTarget = reachCampaign ? reachColumns(reachCampaign, connectors).find((r) => r.connector.id === reach?.connectorId) : undefined;
   return (
     <section class="gp-section">
       <h2 class="gp-h2">Previous merges</h2>
@@ -127,6 +144,18 @@ function PastCampaigns({ ctx, data }: { ctx: Ctx; data: StoreData }) {
                 <td class="gp-small">{sent} sent, {failed} failed, {skipped} skipped of {c.rows.length}</td>
                 <td>
                   <div class="gp-row gp-end">
+                    {sent > 0 && reachColumns(c, connectors).map(({ connector }) => (
+                      <button
+                        type="button"
+                        key={connector.id}
+                        class={`gp-btn gp-btn-ghost ${reach?.campaignId === c.id && reach.connectorId === connector.id ? 'gp-btn-on' : ''}`}
+                        title={`Follow up on ${connector.name}`}
+                        onClick={() => setReach({ campaignId: c.id, connectorId: connector.id })}
+                      >
+                        <ConnectorIcon connector={connector} />
+                        {connector.name}
+                      </button>
+                    ))}
                     {resumable && <button type="button" class="gp-btn" onClick={() => start(ctx, c)}>Resume</button>}
                     {c.log.length > 0 && <button type="button" class="gp-btn gp-btn-ghost" onClick={() => downloadLog(c)}>Log</button>}
                     {deletable && (
@@ -139,12 +168,23 @@ function PastCampaigns({ ctx, data }: { ctx: Ctx; data: StoreData }) {
           })}
         </tbody>
       </table>
+      {reachCampaign && reachTarget && (
+        <ReachList
+          key={`${reachCampaign.id}:${reachTarget.connector.id}`}
+          ctx={ctx}
+          campaign={reachCampaign}
+          connector={reachTarget.connector}
+          column={reachTarget.column}
+          onClose={() => setReach(null)}
+        />
+      )}
     </section>
   );
 }
 
 function NewMerge({ ctx, data }: { ctx: Ctx; data: StoreData }) {
   const [fileName, setFileName] = useState('');
+  const [source, setSource] = useState<RecipientSource>('search');
   const [pasted, setPasted] = useState('');
   const [parsed, setParsed] = useState<ParsedRecipients | null>(null);
   const [parseError, setParseError] = useState('');
@@ -161,13 +201,7 @@ function NewMerge({ ctx, data }: { ctx: Ctx; data: StoreData }) {
   const me = myName(ctx);
   const now = Date.now();
 
-  const load = (text: string, name: string) => {
-    const result = parseRecipientCsv(text);
-    if (!result.emailColumn) {
-      setParsed(null);
-      setParseError('No email column found. Add a column called "email".');
-      return;
-    }
+  const accept = (result: ParsedRecipients, name: string) => {
     if (result.rows.length > MAX_ROWS) {
       setParsed(null);
       setParseError(`That list has ${result.rows.length} recipients. Split it into lists of up to ${MAX_ROWS}.`);
@@ -177,6 +211,35 @@ function NewMerge({ ctx, data }: { ctx: Ctx; data: StoreData }) {
     setParsed(result);
     setFileName(name);
     setPreview(0);
+  };
+
+  /** Rows for people picked in search, with any saved phone number (or other connector address) as a column. */
+  const usePicked = (people: Picked[]) => {
+    const kinds = addressKindsFor(enabledConnectors(data.settings.connectors));
+    const handles = people.map((p) => data.contacts[contactKey(ctx.account, p.email)]?.handles ?? {});
+    const extra = kinds.filter((k) => handles.some((h) => h[k.id])).map((k) => k.id);
+    const rows = people.map((p, i) => ({
+      email: p.email,
+      name: p.name,
+      ...Object.fromEntries(extra.map((id) => [id, handles[i]?.[id] ?? ''])),
+    }));
+    accept({ headers: ['email', 'name', ...extra], emailColumn: 'email', rows, invalid: [], duplicates: 0 }, 'Picked contacts');
+  };
+
+  const load = (text: string, name: string) => {
+    const result = parseRecipientCsv(text);
+    // No header row (the first line is already an address): read it as a plain list such as "Ada <ada@x.com>, bo@y.com".
+    if (!result.emailColumn || result.headers.some(isValidEmail)) {
+      const { people } = parseAddressList(text);
+      if (people.length) {
+        const rows = people.map((p) => ({ email: p.email, name: p.name ?? '' }));
+        return accept({ headers: ['email', 'name'], emailColumn: 'email', rows, invalid: [], duplicates: 0 }, name);
+      }
+      setParsed(null);
+      setParseError('No email addresses found. Add a column called "email", or paste addresses separated by commas or new lines.');
+      return;
+    }
+    accept(result, name);
   };
 
   const templates = templatesFor(data.templates, data.settings.playbooks);
@@ -259,8 +322,25 @@ function NewMerge({ ctx, data }: { ctx: Ctx; data: StoreData }) {
     <>
       <section class="gp-section">
         <h2 class="gp-h2">1. Recipients</h2>
-        <p class="gp-muted gp-small">A CSV with an email column. Other columns (name, company, role…) become variables.</p>
-        <div class="gp-row">
+        <div class="gp-tabs gp-tabs-compact" role="tablist" aria-label="How to add recipients">
+          {SOURCES.map((s) => (
+            <button
+              type="button"
+              role="tab"
+              key={s.id}
+              aria-selected={source === s.id}
+              class={`gp-tab ${source === s.id ? 'gp-tab-on' : ''}`}
+              onClick={() => setSource(s.id)}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+        <div hidden={source !== 'search'}>
+          <RecipientPicker ctx={ctx} data={data} onUse={usePicked} />
+        </div>
+        <div hidden={source !== 'file'}>
+          <p class="gp-muted gp-small">A CSV with an email column. Other columns (name, company, phone, role…) become variables.</p>
           <input
             type="file"
             accept=".csv,text/csv"
@@ -271,11 +351,13 @@ function NewMerge({ ctx, data }: { ctx: Ctx; data: StoreData }) {
             }}
           />
         </div>
-        <details class="gp-small">
-          <summary>Or paste a list</summary>
+        <div hidden={source !== 'paste'} class="gp-stack">
+          <p class="gp-muted gp-small">CSV text with a header row, or just addresses separated by commas or new lines.</p>
           <textarea class="gp-input" rows={4} placeholder={'email,name,company\nada@example.com,Ada Okafor,Acme'} value={pasted} onInput={(e) => setPasted((e.target as HTMLTextAreaElement).value)} />
-          <button type="button" class="gp-btn" disabled={!pasted.trim()} onClick={() => load(pasted, 'Pasted list')}>Use this list</button>
-        </details>
+          <div>
+            <button type="button" class="gp-btn" disabled={!pasted.trim()} onClick={() => load(pasted, 'Pasted list')}>Use this list</button>
+          </div>
+        </div>
         {parseError && <p class="gp-error">{parseError}</p>}
         {parsed && (
           <p class="gp-small">
@@ -285,6 +367,18 @@ function NewMerge({ ctx, data }: { ctx: Ctx; data: StoreData }) {
             {' · columns: '}{parsed.headers.join(', ')}
           </p>
         )}
+        {parsed && enabledConnectors(data.settings.connectors).map((connector) => {
+          const column = addressColumn(connector, parsed.headers);
+          return column ? (
+            <p class="gp-small gp-row" key={connector.id}>
+              <ConnectorIcon connector={connector} />
+              <span>
+                Numbers found in "{column}". After sending, follow up on {connector.name} from Previous merges. Valid numbers are also
+                saved on each contact.
+              </span>
+            </p>
+          ) : null;
+        })}
       </section>
 
       <section class="gp-section">

@@ -1,4 +1,6 @@
-import type { InboxSDK } from '@inboxsdk/core';
+import type { ComposeView, InboxSDK } from '@inboxsdk/core';
+import { enabledConnectors } from '../lib/connectors/registry';
+import { handlesFromRow } from '../lib/connectors/rows';
 import { abortableSleep, SendQueue, type QueueState, type QueueStatus } from '../lib/sendQueue';
 import { buildContext, render, renderHtml } from '../lib/template';
 import type { Campaign, CampaignStatus, RowResult, TrackedThread } from '../lib/types';
@@ -10,9 +12,24 @@ export const HEARTBEAT_STALE_MS = 60_000;
 const HEARTBEAT_EVERY_MS = 20_000;
 const SEND_CONFIRM_TIMEOUT_MS = 90_000;
 
+/** Compose windows opened by mail merge, so other features (the after-send offer) can leave them alone. */
+const automatedComposes = new WeakSet<ComposeView>();
+
+export function isAutomatedCompose(cv: ComposeView): boolean {
+  return automatedComposes.has(cv);
+}
+
+/** Saves phone numbers (and other connector addresses) from a sent row on the contact, keeping any already saved. */
+function rememberAddresses(account: string, row: Record<string, string>): void {
+  const { connectors } = getData().settings;
+  const entries = handlesFromRow(row, enabledConnectors(connectors), connectors.defaultCountry);
+  if (entries.length) void store.addHandles(account, entries).catch(() => undefined);
+}
+
 /** Opens a Gmail compose window, fills it and sends it. Resolves with the new thread id once Gmail confirms. */
 export async function sendViaCompose(sdk: InboxSDK, to: string, subject: string, html: string): Promise<{ threadId: string | null }> {
   const cv = await sdk.Compose.openNewComposeView();
+  automatedComposes.add(cv);
   return new Promise((resolve, reject) => {
     let sending = false;
     let settled = false;
@@ -187,6 +204,7 @@ async function runCampaignInner(ctx: Ctx, original: Campaign, opts: RunOptions):
         const vars = buildContext(row, { myName: me });
         const email = row.email ?? '';
         const { threadId } = await sendViaCompose(ctx.sdk, email, render(campaign.subject, vars).text, renderHtml(campaign.body, vars).html);
+        rememberAddresses(ctx.account, row);
         if (opts.addToStageId && threadId) {
           const tracked: TrackedThread = {
             account: ctx.account,

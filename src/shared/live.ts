@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { defaultData, Store } from '../lib/storage';
+import { defaultData, PEOPLE_PREFIX, Store } from '../lib/storage';
 import type { StoreData } from '../lib/types';
 import { chromeArea, onStorageChange } from './chromeArea';
 
@@ -15,7 +15,9 @@ export function initLive(): Promise<StoreData> {
   started = (async () => {
     current = await store.ensureInitialized();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    onStorageChange(() => {
+    onStorageChange((keys) => {
+      // The recipient address book isn't part of StoreData and changes often while browsing.
+      if (keys.every((k) => k.startsWith(PEOPLE_PREFIX))) return;
       clearTimeout(timer);
       timer = setTimeout(async () => {
         current = await store.load();

@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'preact/hooks';
 import { toCsv } from '../../lib/csv';
 import { APP_NAME } from '../../config';
+import { addressKindsFor, CONNECTORS } from '../../lib/connectors/registry';
 import { orderedActive, playbookName, stagesFor } from '../../lib/playbooks';
-import { threadKey } from '../../lib/storage';
+import { contactKey, threadKey } from '../../lib/storage';
 import type { PlaybookId, Stage, StoreData, TrackedThread } from '../../lib/types';
 import { downloadText, todayStamp } from '../../shared/download';
 import { store, useData } from '../../shared/live';
 import { formatDate, relativeDue } from '../../shared/time';
 import { openSettings, type Ctx } from '../context';
+import { QuickReach } from './connectors';
 
 function isDue(t: TrackedThread, now: number): boolean {
   return t.followUpAt !== null && !t.followUpDone && t.followUpAt <= now;
@@ -24,9 +26,12 @@ function sortThreads(list: TrackedThread[], now: number): TrackedThread[] {
 
 function exportPipeline(data: StoreData, threads: TrackedThread[]): void {
   const stageById = new Map(data.stages.map((s) => [s.id, s]));
+  const kinds = addressKindsFor(CONNECTORS);
   const rows = threads.map((t) => {
     const stage = stageById.get(t.stageId);
+    const card = t.contact ? data.contacts[contactKey(t.account, t.contact.email)] : undefined;
     return {
+      ...Object.fromEntries(kinds.map((k) => [k.id, card?.handles[k.id] ?? ''])),
       name: t.contact?.name ?? '',
       email: t.contact?.email ?? '',
       subject: t.subject,
@@ -37,11 +42,11 @@ function exportPipeline(data: StoreData, threads: TrackedThread[]): void {
       updated: new Date(t.updatedAt).toISOString(),
     };
   });
-  const headers = ['name', 'email', 'subject', 'stage', 'playbook', 'follow_up', 'notes', 'updated'];
+  const headers = ['name', 'email', ...kinds.map((k) => k.id), 'subject', 'stage', 'playbook', 'follow_up', 'notes', 'updated'];
   downloadText(`pipeline-${todayStamp()}.csv`, toCsv(headers, rows));
 }
 
-function Card({ ctx, t, stages, now }: { ctx: Ctx; t: TrackedThread; stages: Stage[]; now: number }) {
+function Card({ ctx, data, t, stages, now }: { ctx: Ctx; data: StoreData; t: TrackedThread; stages: Stage[]; now: number }) {
   const due = t.followUpAt && !t.followUpDone ? relativeDue(t.followUpAt, now) : null;
   const open = () => void ctx.sdk.Router.goto(ctx.sdk.Router.NativeRouteIDs.THREAD, { threadID: t.threadId });
   return (
@@ -53,7 +58,12 @@ function Card({ ctx, t, stages, now }: { ctx: Ctx; t: TrackedThread; stages: Sta
       <button type="button" class="gp-card-title" onClick={open} title="Open conversation">
         {t.subject || '(no subject)'}
       </button>
-      {t.contact && <div class="gp-muted gp-small">{t.contact.name || t.contact.email}</div>}
+      {t.contact && (
+        <div class="gp-row gp-spread gp-card-contact">
+          <span class="gp-muted gp-small">{t.contact.name || t.contact.email}</span>
+          <QuickReach ctx={ctx} data={data} who={t.contact} subject={t.subject} compact />
+        </div>
+      )}
       {due && (
         <div class={`gp-due gp-due-${due.tone}`} title={formatDate(t.followUpAt!)}>
           ⏰ {due.label}
@@ -184,7 +194,7 @@ export function Board({ ctx }: { ctx: Ctx }) {
                 <span class="gp-count">{items.length}</span>
               </header>
               {items.map((t) => (
-                <Card ctx={ctx} t={t} stages={stages} now={now} key={t.threadId} />
+                <Card ctx={ctx} data={data} t={t} stages={stages} now={now} key={t.threadId} />
               ))}
             </section>
           );
