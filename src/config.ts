@@ -21,4 +21,8 @@ export const NOTIFICATION_PREFIX = 'gp-fu|';
 
 export type ExtensionMessage =
   | { type: 'gp:schedule-follow-up'; account: string; threadId: string; when: number }
-  | { type: 'gp:open-options'; section?: string };
+  | { type: 'gp:open-options'; section?: string }
+  /** Opens a link connector (WhatsApp…) for an address. The background builds the link itself and answers with ConnectorReply. */
+  | { type: 'gp:open-connector'; connectorId: string; address: string; text: string };
+
+export type ConnectorReply = { ok: true } | { ok: false; error: string };

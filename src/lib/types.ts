@@ -55,12 +55,41 @@ export interface TrackedThread {
   updatedAt: number;
 }
 
+export interface ConnectorSettings {
+  /** Connector ids the user switched off. Connectors added in an update start switched on. */
+  disabled: string[];
+  /** ISO 3166 code for phone numbers written without a country code, or ''. */
+  defaultCountry: string;
+  /** Chosen way to open each link connector, e.g. { whatsapp: 'web' }. Missing means its first target. */
+  targets: Record<string, string>;
+  /** Text the message box starts with. Template variables work. */
+  message: string;
+  /** After an email goes to someone with a saved number, offer to message them too. */
+  offerAfterSend: boolean;
+}
+
 export interface Settings {
   playbooks: PlaybookId[];
   onboarded: boolean;
   dailySendCap: number;
   sendIntervalSec: number;
   myName: string;
+  /** Remember people from conversations and sent emails, for recipient search. */
+  rememberPeople: boolean;
+  connectors: ConnectorSettings;
+}
+
+/** What is known about a person beyond their email address, shared by every conversation with them. */
+export interface ContactCard {
+  account: string;
+  /** Lower-cased. */
+  email: string;
+  name: string;
+  /** Saved addresses by address kind id, normalised, e.g. { phone: '+447911123456' }. */
+  handles: Record<string, string>;
+  /** When each connector was last opened for this person, by connector id. */
+  lastReached: Record<string, number>;
+  updatedAt: number;
 }
 
 export type RowStatus = 'sent' | 'failed' | 'skipped';
@@ -93,6 +122,8 @@ export interface Campaign {
   addToStageId?: string;
   /** Row index being sent right now. If the page closes mid-send, that row is not retried. */
   inFlight?: number | null;
+  /** Message used for connector follow-ups (WhatsApp…) after this merge. Falls back to the default message. */
+  reachMessage?: string;
 }
 
 export interface SendCounter {
@@ -109,6 +140,8 @@ export interface StoreData {
   templates: Template[];
   stages: Stage[];
   threads: Record<string, TrackedThread>;
+  /** Keyed like storage: contact:<account>:<email>. */
+  contacts: Record<string, ContactCard>;
   campaigns: Campaign[];
   sendCounter: SendCounter;
 }

@@ -1,12 +1,27 @@
 import { CONFIG } from '../config';
+import { MAX_CONNECTOR_MESSAGE } from './connectors/types';
+import { rememberPeople, toPeopleList, type Observed, type Person } from './people';
 import { defaultActivePlaybooks, isPlaybookIdShape, SEED_PLAYBOOKS, SEED_STAGES, SEED_TEMPLATES, SEEDS, seedStages, seedTemplates } from './playbooks';
-import { CUSTOM_OWNER, type Campaign, type Playbook, type SendCounter, type Settings, type Stage, type StoreData, type Template, type TrackedThread } from './types';
+import {
+  CUSTOM_OWNER,
+  type Campaign,
+  type ConnectorSettings,
+  type ContactCard,
+  type Playbook,
+  type SendCounter,
+  type Settings,
+  type Stage,
+  type StoreData,
+  type Template,
+  type TrackedThread,
+} from './types';
 
 /**
  * 1: first release (fixed playbooks).
  * 2: playbooks stored as data (`playbooks`, `seededPlaybooks`), so users can add their own and edit stages.
+ * 3: contact cards (`contact:<account>:<email>`) and connector settings, for WhatsApp and other connectors.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 export const SEND_CAP_CEILING = CONFIG.mailMerge.maxDailyCap;
 export const SEND_INTERVAL_MIN_SEC = CONFIG.mailMerge.minIntervalSec;
 export const SEND_INTERVAL_MAX_SEC = CONFIG.mailMerge.maxIntervalSec;
@@ -22,6 +37,14 @@ export interface StorageArea {
 
 const THREAD_PREFIX = 'thread:';
 const CAMPAIGN_PREFIX = 'campaign:';
+const CONTACT_PREFIX = 'contact:';
+/**
+ * The recipient-search address book, one key per Gmail account. Not part of StoreData: it can hold thousands of
+ * people, so screens read it on demand and live updates ignore it.
+ */
+export const PEOPLE_PREFIX = 'people:';
+/** Connector, target and address kind ids. */
+const ID_SHAPE = /^[a-z0-9][a-z0-9-]{0,40}$/;
 const CORE_KEYS = ['schemaVersion', 'settings', 'templates', 'stages', 'playbooks', 'seededPlaybooks'];
 
 export function threadKey(account: string, threadId: string): string {
@@ -32,6 +55,24 @@ export function campaignKey(id: string): string {
   return `${CAMPAIGN_PREFIX}${id}`;
 }
 
+export function peopleKey(account: string): string {
+  return `${PEOPLE_PREFIX}${account.toLowerCase()}`;
+}
+
+export function contactKey(account: string, email: string): string {
+  return `${CONTACT_PREFIX}${account.toLowerCase()}:${email.trim().toLowerCase()}`;
+}
+
+export function defaultConnectorSettings(): ConnectorSettings {
+  return {
+    disabled: [],
+    defaultCountry: CONFIG.connectors.defaultCountry,
+    targets: {},
+    message: CONFIG.connectors.defaultMessage,
+    offerAfterSend: CONFIG.connectors.offerAfterSend,
+  };
+}
+
 export function defaultSettings(): Settings {
   return {
     playbooks: defaultActivePlaybooks(),
@@ -39,6 +80,8 @@ export function defaultSettings(): Settings {
     dailySendCap: CONFIG.mailMerge.defaultDailyCap,
     sendIntervalSec: CONFIG.mailMerge.defaultIntervalSec,
     myName: '',
+    rememberPeople: CONFIG.people.remember,
+    connectors: defaultConnectorSettings(),
   };
 }
 
@@ -51,6 +94,7 @@ export function defaultData(): StoreData {
     templates: SEED_TEMPLATES.map((t) => ({ ...t })),
     stages: SEED_STAGES.map((s) => ({ ...s })),
     threads: {},
+    contacts: {},
     campaigns: [],
     sendCounter: { date: '', count: 0 },
   };
@@ -60,6 +104,27 @@ function clampInt(value: unknown, min: number, max: number, fallback: number): n
   const n = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, Math.round(n)));
+}
+
+export function sanitizeConnectorSettings(raw: unknown): ConnectorSettings {
+  const d = defaultConnectorSettings();
+  if (!raw || typeof raw !== 'object') return d;
+  const r = raw as Partial<Record<keyof ConnectorSettings, unknown>>;
+  const targets: Record<string, string> = {};
+  if (r.targets && typeof r.targets === 'object') {
+    for (const [id, target] of Object.entries(r.targets)) {
+      if (ID_SHAPE.test(id) && typeof target === 'string' && ID_SHAPE.test(target)) targets[id] = target;
+    }
+  }
+  let defaultCountry = d.defaultCountry;
+  if (r.defaultCountry === '' || (typeof r.defaultCountry === 'string' && /^[A-Z]{2}$/.test(r.defaultCountry))) defaultCountry = r.defaultCountry;
+  return {
+    disabled: Array.isArray(r.disabled) ? [...new Set(r.disabled.filter((x): x is string => typeof x === 'string' && ID_SHAPE.test(x)))] : d.disabled,
+    defaultCountry,
+    targets,
+    message: typeof r.message === 'string' ? r.message.slice(0, MAX_CONNECTOR_MESSAGE) : d.message,
+    offerAfterSend: typeof r.offerAfterSend === 'boolean' ? r.offerAfterSend : d.offerAfterSend,
+  };
 }
 
 /** @param knownPlaybooks ids that exist; active playbooks not in this list are dropped. */
@@ -76,6 +141,8 @@ export function sanitizeSettings(raw: unknown, knownPlaybooks: readonly string[]
     dailySendCap: clampInt(r.dailySendCap, 1, SEND_CAP_CEILING, d.dailySendCap),
     sendIntervalSec: clampInt(r.sendIntervalSec, SEND_INTERVAL_MIN_SEC, SEND_INTERVAL_MAX_SEC, d.sendIntervalSec),
     myName: typeof r.myName === 'string' ? r.myName.slice(0, 120) : '',
+    rememberPeople: typeof r.rememberPeople === 'boolean' ? r.rememberPeople : d.rememberPeople,
+    connectors: sanitizeConnectorSettings(r.connectors),
   };
 }
 
@@ -104,6 +171,36 @@ function isThread(t: unknown): t is TrackedThread {
   if (!t || typeof t !== 'object') return false;
   const x = t as Record<string, unknown>;
   return typeof x.account === 'string' && typeof x.threadId === 'string' && typeof x.stageId === 'string';
+}
+
+/** Keeps the entries of an object whose key is an id and whose value passes `ok`. */
+function cleanMap<T>(raw: unknown, ok: (v: unknown) => v is T): Record<string, T> {
+  const out: Record<string, T> = {};
+  if (raw && typeof raw === 'object') {
+    for (const [k, v] of Object.entries(raw)) if (ID_SHAPE.test(k) && ok(v)) out[k] = v;
+  }
+  return out;
+}
+const isText = (v: unknown): v is string => typeof v === 'string' && v !== '';
+const isTime = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/** A clean ContactCard, or null when the value can't be one. */
+export function toContactCard(raw: unknown): ContactCard | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const x = raw as Record<string, unknown>;
+  if (typeof x.account !== 'string' || typeof x.email !== 'string' || !x.email.trim()) return null;
+  return {
+    account: x.account.toLowerCase(),
+    email: x.email.trim().toLowerCase(),
+    name: typeof x.name === 'string' ? x.name : '',
+    handles: cleanMap(x.handles, isText),
+    lastReached: cleanMap(x.lastReached, isTime),
+    updatedAt: typeof x.updatedAt === 'number' ? x.updatedAt : 0,
+  };
+}
+
+function emptyCard(account: string, email: string, name = ''): ContactCard {
+  return { account: account.toLowerCase(), email: email.trim().toLowerCase(), name, handles: {}, lastReached: {}, updatedAt: 0 };
 }
 
 function isCampaign(c: unknown): c is Campaign {
@@ -145,10 +242,15 @@ export function migrate(raw: Record<string, unknown>): StoreData {
     : d.stages.filter((s) => known.includes(s.playbookId));
 
   const threads: Record<string, TrackedThread> = {};
+  const contacts: Record<string, ContactCard> = {};
   const campaigns: Campaign[] = [];
   for (const [key, value] of Object.entries(raw)) {
     if (key.startsWith(THREAD_PREFIX) && isThread(value)) threads[key] = value;
     if (key.startsWith(CAMPAIGN_PREFIX) && isCampaign(value)) campaigns.push(value);
+    if (key.startsWith(CONTACT_PREFIX)) {
+      const card = toContactCard(value);
+      if (card && key === contactKey(card.account, card.email)) contacts[key] = card;
+    }
   }
   campaigns.sort((a, b) => b.createdAt - a.createdAt);
   const counter = raw.sendCounter as Partial<SendCounter> | undefined;
@@ -161,6 +263,7 @@ export function migrate(raw: Record<string, unknown>): StoreData {
     templates,
     stages,
     threads,
+    contacts,
     campaigns,
     sendCounter: {
       date: typeof counter?.date === 'string' ? counter.date : '',
@@ -226,6 +329,13 @@ export class Store {
     const next = sanitizeSettings({ ...current, ...patch }, known);
     await this.area.set({ settings: next });
     return next;
+  }
+
+  /** Changes some connector settings and keeps the rest. */
+  async saveConnectorSettings(patch: Partial<ConnectorSettings>): Promise<Settings> {
+    const known = await this.knownPlaybookIds();
+    const current = sanitizeSettings((await this.area.get(['settings'])).settings, known);
+    return this.saveSettings({ connectors: { ...current.connectors, ...patch } });
   }
 
   async saveTemplates(templates: Template[]): Promise<void> {
@@ -320,6 +430,78 @@ export class Store {
     await this.area.remove([threadKey(account, threadId)]);
   }
 
+  async getContact(account: string, email: string): Promise<ContactCard | null> {
+    const key = contactKey(account, email);
+    return toContactCard((await this.area.get([key]))[key]);
+  }
+
+  private async writeContact(card: ContactCard): Promise<void> {
+    const key = contactKey(card.account, card.email);
+    if (!Object.keys(card.handles).length && !Object.keys(card.lastReached).length) await this.area.remove([key]);
+    else await this.area.set({ [key]: { ...card, updatedAt: Date.now() } });
+  }
+
+  /** Saves (or with `value` null, removes) one address for a person, e.g. their phone number. */
+  async setHandle(account: string, who: { email: string; name?: string }, kind: string, value: string | null): Promise<void> {
+    const card = (await this.getContact(account, who.email)) ?? emptyCard(account, who.email);
+    const handles = { ...card.handles };
+    if (value) handles[kind] = value;
+    else delete handles[kind];
+    await this.writeContact({ ...card, name: who.name || card.name, handles });
+  }
+
+  /** Records that a connector was opened for this person. */
+  async markReached(account: string, who: { email: string; name?: string }, connectorId: string, at = Date.now()): Promise<void> {
+    const card = (await this.getContact(account, who.email)) ?? emptyCard(account, who.email);
+    await this.writeContact({ ...card, name: who.name || card.name, lastReached: { ...card.lastReached, [connectorId]: at } });
+  }
+
+  /** Adds addresses, for example from a mail merge list, without replacing any the user already saved. Returns how many were added. */
+  async addHandles(account: string, entries: Array<{ email: string; name?: string; kind: string; value: string }>): Promise<number> {
+    if (!entries.length) return 0;
+    const keys = [...new Set(entries.map((e) => contactKey(account, e.email)))];
+    const stored = await this.area.get(keys);
+    const cards = new Map<string, ContactCard>();
+    for (const key of keys) {
+      const card = toContactCard(stored[key]);
+      if (card) cards.set(key, card);
+    }
+    const changed = new Set<string>();
+    for (const e of entries) {
+      const key = contactKey(account, e.email);
+      const card = cards.get(key) ?? emptyCard(account, e.email, e.name ?? '');
+      if (card.handles[e.kind]) continue;
+      cards.set(key, { ...card, name: card.name || e.name || '', handles: { ...card.handles, [e.kind]: e.value }, updatedAt: Date.now() });
+      changed.add(key);
+    }
+    if (changed.size) await this.area.set(Object.fromEntries([...changed].map((key) => [key, cards.get(key)])));
+    return changed.size;
+  }
+
+  async getPeople(account: string): Promise<Person[]> {
+    const key = peopleKey(account);
+    return toPeopleList((await this.area.get([key]))[key]);
+  }
+
+  /** Adds sightings to the account's address book. Writes only when something changed. */
+  async rememberPeople(account: string, observed: readonly Observed[], now = Date.now()): Promise<boolean> {
+    const current = await this.getPeople(account);
+    const result = rememberPeople(current, observed, now, { cap: CONFIG.people.maxRemembered, me: account.toLowerCase() });
+    if (result.changed) await this.area.set({ [peopleKey(account)]: result.list });
+    return result.changed;
+  }
+
+  /** How many people are remembered across all accounts. */
+  async countPeople(): Promise<number> {
+    const all = await this.area.get(null);
+    return Object.entries(all).reduce((n, [key, value]) => n + (key.startsWith(PEOPLE_PREFIX) ? toPeopleList(value).length : 0), 0);
+  }
+
+  async forgetPeople(): Promise<void> {
+    const keys = Object.keys(await this.area.get(null)).filter((k) => k.startsWith(PEOPLE_PREFIX));
+    if (keys.length) await this.area.remove(keys);
+  }
+
   async saveCampaign(campaign: Campaign): Promise<void> {
     await this.area.set({ [campaignKey(campaign.id)]: campaign });
   }
@@ -357,7 +539,8 @@ export class Store {
     if (payload?.app !== BACKUP_APP_TAG || !payload.data || typeof payload.data !== 'object') {
       throw new Error(`That file is not a ${CONFIG.appName} backup.`);
     }
-    const data = migrate(payload.data as Record<string, unknown>);
+    const raw = payload.data as Record<string, unknown>;
+    const data = migrate(raw);
     const existing = Object.keys(await this.area.get(null));
     if (existing.length) await this.area.remove(existing);
     const items: Record<string, unknown> = {
@@ -370,7 +553,11 @@ export class Store {
       sendCounter: data.sendCounter,
     };
     for (const [key, thread] of Object.entries(data.threads)) items[key] = thread;
+    for (const [key, card] of Object.entries(data.contacts)) items[key] = card;
     for (const c of data.campaigns) items[campaignKey(c.id)] = c;
+    for (const [key, value] of Object.entries(raw)) {
+      if (key.startsWith(PEOPLE_PREFIX) && key.length > PEOPLE_PREFIX.length) items[key] = toPeopleList(value);
+    }
     await this.area.set(items);
     return data;
   }

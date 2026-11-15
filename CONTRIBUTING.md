@@ -2,8 +2,8 @@
 
 ## Setup
 
-Thanks for helping. Bug reports from real Gmail use, new playbooks and fixes for the [known issues](README.md#known-issues)
-are especially welcome. Please follow the [code of conduct](CODE_OF_CONDUCT.md).
+Thanks for helping. Bug reports from real Gmail use, new playbooks, new connectors and fixes for the
+[known issues](README.md#known-issues) are especially welcome. Please follow the [code of conduct](CODE_OF_CONDUCT.md).
 
 ```bash
 # Fork on GitHub, then:
@@ -38,6 +38,12 @@ Use a test Gmail account for development, especially for mail merge.
 
 Add one JSON file to `playbooks/`. No code changes are needed. See [docs/PLAYBOOKS.md](docs/PLAYBOOKS.md).
 
+### Adding a connector
+
+Add one file to `src/lib/connectors/catalog/` and register it. The UI picks it up. See
+[docs/CONNECTORS.md](docs/CONNECTORS.md), including the rules: official links or APIs only, and the user stays in
+control.
+
 ### Adding a setting
 
 See [docs/CONFIGURATION.md](docs/CONFIGURATION.md#adding-a-setting).
@@ -49,7 +55,8 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md#adding-a-setting).
 - CSS lives in `static/gp.css`. Every selector is scoped to `.gp-root` or a `gp-` class so nothing leaks into Gmail. Use
   the colour tokens (`--gp-*`) so light and dark themes both work.
 - User-facing text: short, plain sentences in sentence case. Say what happened and what to do next.
-- No network calls. If a feature needs a server, discuss it first; it changes the privacy policy and store disclosures.
+- No network calls. If a feature needs a server or a provider's API, discuss it first; it changes the privacy policy and
+  store disclosures.
 
 ## Tests
 
@@ -67,6 +74,9 @@ npx vitest           # watch mode
 | `tests/storage.test.ts` | Migrations, settings clamping, per-account threads, daily counter across midnight, backup and restore, playbook helpers |
 | `tests/sendQueue.test.ts` | Pacing, daily cap and next-day resume, failures, skips, pause and resume, stop, resume from saved progress |
 | `tests/mergeRunner.test.ts` | In-flight recovery, missing-variable detection, other-tab detection |
+| `tests/connectors.test.ts` | Phone number parsing, WhatsApp links, link safety checks, the registry (every catalog file registered and checked), mail merge address columns, connector messages |
+| `tests/people.test.ts` | Recipient address book (sightings, cap, automated senders), search ranking, pasted address lists, storage and backups |
+| `tests/contacts.test.ts` | Contact cards (save, remove, merge-list import without overwriting), schema 3 migration, connector settings, backups |
 
 ## Manual Gmail checklist
 
@@ -96,7 +106,11 @@ Gmail can't run in unit tests, so check these by hand in a test account before a
 - [ ] Selecting conversations shows the export button. The CSV excludes your own address and merges duplicates.
 
 **Mail merge** (send only to addresses you own)
-- [ ] Loading a CSV reports duplicates and invalid lines.
+- [ ] After browsing the inbox for a minute, **Search contacts** suggests people by name and address; noreply senders don't appear.
+- [ ] Enter, comma and pasting several addresses add chips; Backspace removes the last; **Add everyone in a pipeline stage** adds that stage's contacts.
+- [ ] **Use N recipients** fills the list; people with a saved number get a `phone` column.
+- [ ] Settings → Your data shows the remembered count; **Forget them** empties it, and switching it off stops new people being added.
+- [ ] Loading a CSV reports duplicates and invalid lines. Pasting plain addresses without a header row works.
 - [ ] Preview renders every row. The missing-value warning and **Send anyway** behave as described.
 - [ ] **Send test to me** arrives with "[Test]" and your signature.
 - [ ] A two-row merge sends both emails, the gap matches the setting, and both appear in Sent.
@@ -104,6 +118,18 @@ Gmail can't run in unit tests, so check these by hand in a test account before a
 - [ ] **Pause** then **Resume** continues from the right row. **Stop** is final.
 - [ ] Reloading Gmail mid-merge shows **Interrupted**, and Resume works without re-sending.
 - [ ] With the daily limit set to 1, the merge stops at the limit with "Daily limit reached".
+
+**WhatsApp** (use your own number or a test number)
+- [ ] The Contact panel shows the other person. Saving a local number with and without a default country behaves as described.
+- [ ] **WhatsApp** opens the message box with the default message filled in; a template replaces it.
+- [ ] **Open WhatsApp** opens WhatsApp Web with the right number and text, and a second message reuses the same tab.
+- [ ] With **Choose each time**, wa.me opens and offers the app.
+- [ ] Sending an email to someone with a saved number shows the after-send card; a mail merge doesn't.
+- [ ] **Don't offer this again** switches the card off in Settings.
+- [ ] After a merge whose list has a `phone` column, Previous merges shows **WhatsApp**; **Open next** walks the list, and opened rows stay marked after a reload.
+- [ ] Board cards with a saved number show the WhatsApp icon.
+- [ ] Both CSV exports include the phone column.
+- [ ] Switching WhatsApp off hides every WhatsApp button.
 
 **Settings**
 - [ ] Playbook toggles show and hide stages and templates in Gmail.
@@ -114,6 +140,7 @@ Gmail can't run in unit tests, so check these by hand in a test account before a
 **Configuration**
 - [ ] A build with `APP_NAME=Test` shows "Test" in Chrome, Settings and Gmail messages.
 - [ ] A build without `INBOXSDK_APP_ID` warns at build time and shows the InboxSDK banner. With it, there is no banner.
+- [ ] A build with `CONNECTORS=none` has no Contact panel, after-send card or WhatsApp buttons.
 
 **General**
 - [ ] Light and dark Gmail themes both look right.

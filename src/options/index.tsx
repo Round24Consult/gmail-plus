@@ -1,9 +1,13 @@
 import { render } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import { APP_NAME, CONFIG } from '../config';
+import { countryOptions } from '../lib/connectors/phone';
+import { CONNECTORS, targetFor } from '../lib/connectors/registry';
+import { MAX_CONNECTOR_MESSAGE } from '../lib/connectors/types';
 import { makePlaybookId, playbookName, SEED_TEMPLATES } from '../lib/playbooks';
 import { SEND_CAP_CEILING, SEND_INTERVAL_MAX_SEC, SEND_INTERVAL_MIN_SEC } from '../lib/storage';
 import { CUSTOM_OWNER, type OwnerId, type Playbook, type PlaybookId, type Settings, type Stage, type StoreData, type Template } from '../lib/types';
+import { ConnectorIcon } from '../shared/ConnectorIcon';
 import { downloadText, todayStamp } from '../shared/download';
 import { initLive, store, useData } from '../shared/live';
 
@@ -301,6 +305,83 @@ function General({ settings }: { settings: Settings }) {
   );
 }
 
+function Connectors({ settings }: { settings: Settings }) {
+  const s = settings.connectors;
+  const [message, setMessage] = useState(s.message);
+  useEffect(() => setMessage(s.message), [s.message]);
+  const countries = useMemo(() => countryOptions(navigator.language), []);
+  if (!CONNECTORS.length) return null;
+  const save = (patch: Parameters<typeof store.saveConnectorSettings>[0]) => void store.saveConnectorSettings(patch);
+  return (
+    <section id="connectors" class="gp-section">
+      <h2 class="gp-h2">Connectors</h2>
+      <p class="gp-muted">
+        Message your contacts on other apps from Gmail. {APP_NAME} opens the app with your message typed in, and you check it and
+        press Send there. Nothing is sent for you, and no account or server is involved.
+      </p>
+      <div class="gp-cards">
+        {CONNECTORS.map((c) => {
+          const on = !s.disabled.includes(c.id);
+          const target = targetFor(c, s);
+          return (
+            <div class={`gp-option ${on ? 'gp-option-on' : ''}`} key={c.id}>
+              <label class="gp-check gp-flush">
+                <input
+                  type="checkbox"
+                  checked={on}
+                  onChange={(e) => save({ disabled: (e.target as HTMLInputElement).checked ? s.disabled.filter((id) => id !== c.id) : [...s.disabled, c.id] })}
+                />
+                <ConnectorIcon connector={c} />
+                <strong>{c.name}</strong>
+              </label>
+              <span class="gp-muted gp-small">{c.description}</span>
+              {c.targets.length > 1 && (
+                <label class="gp-field gp-flush">
+                  <span class="gp-label">Open in</span>
+                  <select class="gp-input" value={target.id} disabled={!on} onChange={(e) => save({ targets: { ...s.targets, [c.id]: (e.target as HTMLSelectElement).value } })}>
+                    {c.targets.map((t) => <option value={t.id} key={t.id}>{t.label}</option>)}
+                  </select>
+                  <span class="gp-muted gp-small">{target.hint}</span>
+                </label>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <label class="gp-field">
+        <span class="gp-label">Default country for phone numbers</span>
+        <select class="gp-input" value={s.defaultCountry} onChange={(e) => save({ defaultCountry: (e.target as HTMLSelectElement).value })}>
+          <option value="">None: numbers need their country code (+44…)</option>
+          {countries.map((c) => <option value={c.code} key={c.code}>{c.name} (+{c.callingCode})</option>)}
+        </select>
+        <span class="gp-muted gp-small">Used for numbers written without a country code, such as 07911 123456.</span>
+      </label>
+      <label class="gp-field">
+        <span class="gp-label">Default message</span>
+        <textarea
+          class="gp-input"
+          rows={4}
+          maxLength={MAX_CONNECTOR_MESSAGE}
+          value={message}
+          onInput={(e) => setMessage((e.target as HTMLTextAreaElement).value)}
+          onBlur={() => message !== s.message && save({ message })}
+        />
+        <span class="gp-muted gp-small">
+          Variables: {'{{firstName|there}}'}, {'{{name}}'}, {'{{subject}}'} (the email you're following up), {'{{myName}}'}, and mail
+          merge columns.{' '}
+          {message !== CONFIG.connectors.defaultMessage && (
+            <button type="button" class="gp-link gp-small" onClick={() => save({ message: CONFIG.connectors.defaultMessage })}>Reset</button>
+          )}
+        </span>
+      </label>
+      <label class="gp-check">
+        <input type="checkbox" checked={s.offerAfterSend} onChange={(e) => save({ offerAfterSend: (e.target as HTMLInputElement).checked })} />
+        After I email someone whose number is saved, offer to message them too
+      </label>
+    </section>
+  );
+}
+
 function TemplateForm({ data, initial, onSave, onCancel }: { data: StoreData; initial: Template; onSave: (t: Template) => void; onCancel: () => void }) {
   const [t, setT] = useState(initial);
   const set = (patch: Partial<Template>) => setT({ ...t, ...patch });
@@ -392,16 +473,42 @@ function Templates({ data }: { data: StoreData }) {
   );
 }
 
-function DataSection() {
+function RememberPeople({ settings }: { settings: Settings }) {
+  const [count, setCount] = useState<number | null>(null);
+  const refresh = () => void store.countPeople().then(setCount, () => setCount(null));
+  useEffect(refresh, []);
+  return (
+    <div class="gp-field">
+      <label class="gp-check gp-flush">
+        <input type="checkbox" checked={settings.rememberPeople} onChange={(e) => void store.saveSettings({ rememberPeople: (e.target as HTMLInputElement).checked })} />
+        Remember names and addresses from my conversations and sent emails, to suggest mail merge recipients
+      </label>
+      <span class="gp-muted gp-small">
+        {count === null ? '' : `${count} ${count === 1 ? 'person' : 'people'} remembered. `}
+        {!!count && (
+          <button type="button" class="gp-link gp-small" onClick={async () => {
+            await store.forgetPeople();
+            refresh();
+          }}>
+            Forget them
+          </button>
+        )}
+      </span>
+    </div>
+  );
+}
+
+function DataSection({ settings }: { settings: Settings }) {
   const [message, setMessage] = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
   return (
     <section id="data" class="gp-section">
       <h2 class="gp-h2">Your data</h2>
       <p class="gp-muted">
-        Everything {APP_NAME} saves (settings, playbooks, templates, pipeline, follow-ups and mail merge lists) stays in this
-        browser. A backup file moves it to another computer.
+        Everything {APP_NAME} saves (settings, playbooks, templates, pipeline, follow-ups, contacts' phone numbers, remembered
+        recipients and mail merge lists) stays in this browser. A backup file moves it to another computer.
       </p>
+      <RememberPeople settings={settings} />
       <div class="gp-row gp-wrap">
         <button type="button" class="gp-btn" onClick={async () => downloadText(`${CONFIG.appSlug}-backup-${todayStamp()}.json`, await store.exportBackup(), 'application/json')}>
           Download backup
@@ -464,6 +571,8 @@ function About() {
         {APP_NAME} works inside the Gmail page you already have open. It does not connect to any server, does not use the Gmail
         API, and does not send your emails, contacts or lists anywhere. InboxSDK's optional error and usage reporting is switched
         off. Mail merge emails go out through your own Gmail compose window, exactly as if you had sent them yourself.
+        {CONNECTORS.length > 0 &&
+          ` When you open a connector such as ${CONNECTORS[0]!.name}, your browser opens that app's own link with the number and message in it; ${APP_NAME} itself receives nothing.`}
         {CONFIG.privacyPolicyUrl && (
           <>
             {' '}
@@ -511,6 +620,7 @@ function App() {
         <a href="#you">You</a>
         <a href="#sending">Limits</a>
         <a href="#templates">Templates</a>
+        {CONNECTORS.length > 0 && <a href="#connectors">Connectors</a>}
         <a href="#data">Data</a>
         <a href="#privacy">Privacy</a>
       </nav>
@@ -518,7 +628,8 @@ function App() {
       <PlaybookManager data={data} />
       <General settings={data.settings} />
       <Templates data={data} />
-      <DataSection />
+      <Connectors settings={data.settings} />
+      <DataSection settings={data.settings} />
       <About />
     </main>
   );

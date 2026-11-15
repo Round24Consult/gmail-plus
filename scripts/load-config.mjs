@@ -4,8 +4,13 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
+import { isSupportedCountry } from 'libphonenumber-js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+/** Connector code lives here, one `<id>.ts` per connector. It is source, so it is always read from the repository. */
+const CONNECTOR_CATALOG = join(ROOT, 'src/lib/connectors/catalog');
+/** Longest message a connector may prefill. Matches MAX_CONNECTOR_MESSAGE in src/lib/connectors/types.ts. */
+const MAX_CONNECTOR_MESSAGE = 4000;
 
 /** Environment variable → config path. */
 export const ENV_VARS = {
@@ -26,9 +31,16 @@ export const ENV_VARS = {
   FOLLOW_UP_SWEEP_MINUTES: 'followUps.sweepMinutes',
   FOLLOW_UP_REMINDER_HOUR: 'followUps.reminderHour',
   DEFAULT_PLAYBOOKS: 'defaultPlaybooks',
+  CONNECTORS: 'connectors.available',
+  DEFAULT_COUNTRY: 'connectors.defaultCountry',
+  CONNECTOR_MESSAGE: 'connectors.defaultMessage',
 };
 
+/** Paths whose environment value is a comma-separated list. "none" gives an empty list. */
+const LIST_PATHS = new Set(['defaultPlaybooks', 'connectors.available']);
+
 const NUMBER_PATHS = new Set(Object.values(ENV_VARS).filter((p) => p.startsWith('mailMerge.') || p.startsWith('followUps.')));
+const COUNTRY_RE = /^[A-Z]{2}$/;
 const ID_RE = /^[a-z0-9][a-z0-9-]{1,30}$/;
 const KEY_RE = /^[a-z0-9][a-z0-9-]{0,40}$/;
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -121,12 +133,57 @@ export function validateConfig(config) {
     if (!(f.sweepMinutes >= 1 && f.sweepMinutes <= 1440)) errors.push('followUps.sweepMinutes must be between 1 and 1440');
     if (!(f.reminderHour >= 0 && f.reminderHour <= 23)) errors.push('followUps.reminderHour must be between 0 and 23');
   }
+  errors.push(...validateConnectors(config.connectors));
+  errors.push(...validatePeople(config.people));
   const ids = new Set((config.playbooks ?? []).map((p) => p.id));
   if (!ids.size) errors.push('At least one playbook is required in playbooks/');
   for (const id of config.defaultPlaybooks ?? []) {
     if (!ids.has(id)) errors.push(`defaultPlaybooks lists "${id}", but there is no playbooks/${id}.json`);
   }
   return { errors, warnings };
+}
+
+export function validateConnectors(c) {
+  if (!c || typeof c !== 'object') return ['connectors is required (see config/defaults.json)'];
+  const errors = [];
+  if (!Array.isArray(c.available) || c.available.some((id) => typeof id !== 'string')) {
+    errors.push('connectors.available must be a list of connector ids');
+  } else {
+    const seen = new Set();
+    for (const id of c.available) {
+      if (seen.has(id)) errors.push(`connectors.available lists "${id}" twice`);
+      seen.add(id);
+      if (!ID_RE.test(id) || !existsSync(join(CONNECTOR_CATALOG, `${id}.ts`))) {
+        errors.push(`connectors.available lists "${id}", but there is no src/lib/connectors/catalog/${id}.ts`);
+      }
+    }
+  }
+  if (typeof c.defaultCountry !== 'string' || (c.defaultCountry !== '' && !(COUNTRY_RE.test(c.defaultCountry) && isSupportedCountry(c.defaultCountry)))) {
+    errors.push('connectors.defaultCountry must be empty or a two-letter country code such as GB, US or NG');
+  }
+  if (typeof c.defaultMessage !== 'string' || c.defaultMessage.length > MAX_CONNECTOR_MESSAGE) {
+    errors.push(`connectors.defaultMessage must be text of at most ${MAX_CONNECTOR_MESSAGE} characters`);
+  }
+  if (typeof c.offerAfterSend !== 'boolean') errors.push('connectors.offerAfterSend must be true or false');
+  return errors;
+}
+
+export function validatePeople(p) {
+  if (!p || typeof p !== 'object') return ['people is required (see config/defaults.json)'];
+  const errors = [];
+  if (typeof p.remember !== 'boolean') errors.push('people.remember must be true or false');
+  if (!Number.isInteger(p.maxRemembered) || p.maxRemembered < 100 || p.maxRemembered > 20000) {
+    errors.push('people.maxRemembered must be a whole number from 100 to 20000');
+  }
+  return errors;
+}
+
+function envValue(path, raw) {
+  if (LIST_PATHS.has(path)) return raw.trim().toLowerCase() === 'none' ? [] : raw.split(',').map((s) => s.trim()).filter(Boolean);
+  if (path === 'connectors.defaultCountry') return raw.trim().toUpperCase();
+  // Shells and CI variables can't always hold line breaks, so "\n" in the value means a new line.
+  if (path === 'connectors.defaultMessage') return raw.replaceAll('\\n', '\n');
+  return raw.trim();
 }
 
 /**
@@ -143,12 +200,11 @@ export function loadConfig({ useEnv = true, env = process.env, root = ROOT } = {
     for (const [name, path] of Object.entries(ENV_VARS)) {
       const raw = merged[name];
       if (raw === undefined || raw === '') continue;
-      if (path === 'defaultPlaybooks') setPath(config, path, raw.split(',').map((s) => s.trim()).filter(Boolean));
-      else if (NUMBER_PATHS.has(path)) {
+      if (NUMBER_PATHS.has(path)) {
         const n = Number(raw);
         if (!Number.isInteger(n)) errors.push(`${name} must be a whole number (got "${raw}")`);
         else setPath(config, path, n);
-      } else setPath(config, path, raw.trim());
+      } else setPath(config, path, envValue(path, raw));
     }
     // PLAYBOOKS=freelancer,recruiter limits which playbook files are bundled.
     if (merged.PLAYBOOKS) only = merged.PLAYBOOKS.split(',').map((s) => s.trim()).filter(Boolean);

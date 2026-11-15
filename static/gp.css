@@ -335,3 +335,107 @@ html[data-gp-theme='dark'] .gp-due-overdue { background: #601410; color: #f9dedc
 .gp-stage-row .gp-check { margin: 0; }
 .gp-stage-count { min-width: 64px; }
 .gp-color { width: 34px; height: 30px; padding: 0; border: 1px solid var(--gp-border); border-radius: 6px; background: none; cursor: pointer; flex: none; }
+
+/* Connectors (WhatsApp…) */
+.gp-cn-icon { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; flex: none; }
+.gp-cn-icon svg { display: block; }
+.gp-btn-on { background: var(--gp-accent-soft); }
+.gp-nowrap { flex-wrap: nowrap !important; }
+.gp-flush { margin: 0; }
+.gp-prewrap { white-space: pre-wrap; }
+.gp-icon-btn {
+  font: inherit;
+  color: var(--gp-muted);
+  background: none;
+  border: 0;
+  border-radius: 50%;
+  padding: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.gp-icon-btn:hover { background: var(--gp-surface-2); }
+.gp-quick-reach { gap: 4px; flex: none; }
+.gp-panel-body .gp-quick-reach { margin-top: 0; }
+.gp-composer { margin: 8px 0; gap: 8px; }
+.gp-card-contact { gap: 6px; min-height: 24px; }
+.gp-card-contact .gp-muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gp-reach-list { margin-top: 16px; gap: 10px; }
+.gp-reach-list > * + * { margin-top: 0; }
+.gp-toast {
+  position: fixed;
+  left: 24px;
+  bottom: 88px; /* above Gmail's own "Message sent" bar */
+  z-index: 1000;
+  width: 340px;
+  max-width: calc(100vw - 48px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--gp-bg);
+  border: 1px solid var(--gp-border);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  padding: 12px 14px;
+}
+.gp-toast .gp-link { align-self: flex-start; }
+.gp-toast-person { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.gp-toast-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Recipient search (mail merge) */
+.gp-root [hidden] { display: none !important; }
+.gp-tabs-compact { margin-bottom: 4px; }
+.gp-tabs-compact .gp-tab { padding: 6px 10px; }
+.gp-picker { display: flex; flex-direction: column; gap: 8px; }
+.gp-picker-field { position: relative; }
+.gp-picker-box {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-height: 40px;
+  padding: 5px 8px;
+  border: 1px solid var(--gp-border);
+  border-radius: 6px;
+  background: var(--gp-bg);
+  cursor: text;
+}
+.gp-picker-box:focus-within { outline: 2px solid var(--gp-accent); outline-offset: -1px; border-color: transparent; }
+.gp-picker-input { flex: 1 1 180px; min-width: 120px; border: 0; outline: 0; background: transparent; color: var(--gp-text); font: inherit; padding: 3px 2px; }
+.gp-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 260px;
+  background: var(--gp-surface-2);
+  border-radius: 999px;
+  padding: 2px 2px 2px 10px;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gp-pill-x { border: 0; background: none; color: var(--gp-muted); cursor: pointer; font-size: 16px; line-height: 1; width: 22px; height: 22px; border-radius: 50%; flex: none; }
+.gp-pill-x:hover { background: var(--gp-border); color: var(--gp-text); }
+.gp-picker-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--gp-bg);
+  border: 1px solid var(--gp-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+.gp-picker-list li { padding: 7px 12px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gp-picker-on { background: var(--gp-surface-2); }
+.gp-picker-name { font-weight: 500; }
+.gp-picker-stage { width: auto; max-width: 100%; }

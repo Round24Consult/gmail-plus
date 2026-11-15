@@ -1,7 +1,10 @@
 import type { ThreadRowView } from '@inboxsdk/core';
+import { addressKindsFor, CONNECTORS } from '../../lib/connectors/registry';
 import { toCsv } from '../../lib/csv';
 import { firstNameFrom } from '../../lib/names';
+import { contactKey } from '../../lib/storage';
 import { downloadText, todayStamp } from '../../shared/download';
+import { getData } from '../../shared/live';
 import { iconUrl, type Ctx } from '../context';
 
 interface ContactRow {
@@ -58,8 +61,15 @@ export function registerExport(ctx: Ctx): void {
         ctx.sdk.ButterBar.showMessage({ text: 'No contacts found in the selected conversations.', time: 4000 });
         return;
       }
-      const headers: Array<keyof ContactRow> = ['name', 'first_name', 'email', 'conversations', 'last_subject'];
-      downloadText(`gmail-contacts-${todayStamp()}.csv`, toCsv(headers, contacts as unknown as Record<string, string | number>[]));
+      // Saved phone numbers (and other connector addresses) as extra columns.
+      const kinds = addressKindsFor(CONNECTORS);
+      const { contacts: cards } = getData();
+      const rowsOut = contacts.map((c) => {
+        const card = cards[contactKey(ctx.account, c.email)];
+        return { ...c, ...Object.fromEntries(kinds.map((k) => [k.id, card?.handles[k.id] ?? ''])) };
+      });
+      const headers = ['name', 'first_name', 'email', ...kinds.map((k) => k.id), 'conversations', 'last_subject'];
+      downloadText(`gmail-contacts-${todayStamp()}.csv`, toCsv(headers, rowsOut));
       ctx.sdk.ButterBar.showMessage({
         text: `Exported ${contacts.length} contact${contacts.length === 1 ? '' : 's'} from ${rows.length} conversation${rows.length === 1 ? '' : 's'}.`,
         time: 4000,
