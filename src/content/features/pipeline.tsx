@@ -2,8 +2,8 @@ import type { LabelDescriptor, MessageView, ThreadView } from '@inboxsdk/core';
 import * as Kefir from 'kefir';
 import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
-import { ROUTES } from '../../config';
-import { PLAYBOOKS, stagesFor, textColorFor } from '../../lib/playbooks';
+import { APP_NAME, ROUTES } from '../../config';
+import { stagesFor, textColorFor } from '../../lib/playbooks';
 import { threadKey } from '../../lib/storage';
 import type { Contact, Stage, StoreData, TrackedThread } from '../../lib/types';
 import { getData, store, subscribe, useData } from '../../shared/live';
@@ -57,7 +57,7 @@ function StageSelect({ data, value, onChange, placeholder }: {
   const active = stagesFor(data.stages, data.settings.playbooks);
   const current = data.stages.find((s) => s.id === value);
   const extra = current && !active.some((s) => s.id === current.id) ? [current] : [];
-  const groups = PLAYBOOKS.map((p) => ({ p, items: [...active, ...extra].filter((s) => s.playbookId === p.id) })).filter((g) => g.items.length);
+  const groups = data.playbooks.map((p) => ({ p, items: [...active, ...extra].filter((s) => s.playbookId === p.id) })).filter((g) => g.items.length);
   return (
     <select class="gp-input" value={value} onChange={(e) => onChange((e.target as HTMLSelectElement).value)}>
       {placeholder && <option value="">{placeholder}</option>}
@@ -238,7 +238,7 @@ export function registerPipeline(ctx: Ctx): void {
         render(<ThreadPanel ctx={ctx} threadView={threadView} threadId={threadId} />, el);
         void autoClearFollowUp(ctx, threadView, threadId);
       })
-      .catch((err) => console.warn('[Gmail Plus] no thread id', err));
+      .catch((err) => console.warn(`[${APP_NAME}] no thread id`, err));
   });
 
   sdk.Lists.registerThreadRowViewHandler((row) => {

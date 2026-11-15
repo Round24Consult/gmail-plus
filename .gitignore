@@ -3,3 +3,8 @@ dist/
 release/
 *.log
 .DS_Store
+
+# Local configuration (see .env.example)
+.env
+.env.*
+!.env.example

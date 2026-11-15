@@ -1,0 +1,64 @@
+{
+  "id": "freelancer",
+  "name": "Freelancer / agency",
+  "blurb": "Leads, proposals and client follow-ups.",
+  "order": 10,
+  "stages": [
+    {
+      "key": "lead",
+      "name": "Lead",
+      "color": "#5f6368"
+    },
+    {
+      "key": "proposal",
+      "name": "Proposal sent",
+      "color": "#1a73e8"
+    },
+    {
+      "key": "negotiating",
+      "name": "Negotiating",
+      "color": "#e37400"
+    },
+    {
+      "key": "won",
+      "name": "Won",
+      "color": "#188038",
+      "closed": true
+    },
+    {
+      "key": "lost",
+      "name": "Lost",
+      "color": "#c5221f",
+      "closed": true
+    }
+  ],
+  "templates": [
+    {
+      "key": "intro",
+      "emoji": "👋",
+      "name": "Intro",
+      "subject": "Your project",
+      "body": "Hi {{firstName|there}},\n\nThanks for reaching out. I'd love to hear more about the project. Could you share the scope, timeline and budget you have in mind?\n\nBest,\n{{myName}}"
+    },
+    {
+      "key": "proposal-follow-up",
+      "emoji": "📄",
+      "name": "Proposal follow-up",
+      "subject": "Following up on my proposal",
+      "body": "Hi {{firstName|there}},\n\nJust checking in on the proposal I sent. I'm happy to walk through it on a quick call or adjust anything that doesn't fit.\n\nBest,\n{{myName}}"
+    },
+    {
+      "key": "confirm",
+      "emoji": "✅",
+      "name": "Confirm",
+      "body": "Hi {{firstName|there}},\n\nConfirmed, thank you. I'll get started and send you an update by the end of the week.\n\n{{myName}}"
+    },
+    {
+      "key": "invoice",
+      "emoji": "🧾",
+      "name": "Invoice",
+      "subject": "Invoice",
+      "body": "Hi {{firstName|there}},\n\nPlease find the invoice for this milestone attached. Let me know if you need anything else to process it.\n\nThanks,\n{{myName}}"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 /*
- * Gmail Plus styles. Loaded into Gmail and into the extension pages.
+ * Extension styles. Loaded into Gmail and into the extension pages.
  * Every rule is scoped to .gp-root or a gp- class so nothing leaks into Gmail.
  */
 
@@ -322,3 +322,16 @@ html[data-gp-theme='dark'] .gp-due-overdue { background: #601410; color: #f9dedc
   .gp-page { padding: 16px; }
   .gp-col { flex-basis: 220px; }
 }
+
+/* Settings: playbook and stage editor */
+.gp-pb { margin: 8px 0; padding: 0; }
+.gp-pb > *:not(summary) { margin-left: 14px; margin-right: 14px; }
+.gp-pb[open] { padding-bottom: 12px; }
+.gp-pb-head { display: flex; align-items: baseline; gap: 10px; padding: 12px 14px; cursor: pointer; }
+.gp-pb .gp-row.gp-wrap .gp-input { flex: 1 1 220px; }
+.gp-pb .gp-label { margin-top: 10px; }
+.gp-stage-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--gp-border); flex-wrap: wrap; }
+.gp-stage-row > .gp-input { flex: 1 1 160px; }
+.gp-stage-row .gp-check { margin: 0; }
+.gp-stage-count { min-width: 64px; }
+.gp-color { width: 34px; height: 30px; padding: 0; border: 1px solid var(--gp-border); border-radius: 6px; background: none; cursor: pointer; flex: none; }

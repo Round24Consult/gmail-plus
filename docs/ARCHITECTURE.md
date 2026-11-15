@@ -16,7 +16,16 @@ backend: all state lives in `chrome.storage.local`.
 | `popup.js` | `src/popup/index.tsx` | Extension page | Toolbar popup |
 
 `pageWorld.js` must keep that exact name at the root of `dist/`, because InboxSDK's background script injects it by
-name. All bundles are IIFE (content scripts can't be ES modules). `static/` is copied as-is; the build writes the version
+name.
+
+## Configuration
+
+`scripts/load-config.mjs` merges `config/defaults.json`, `.env`, environment variables and every `playbooks/*.json`
+file, validates the result and returns an `AppConfig` (`src/configTypes.ts`). `build.mjs` passes it to esbuild as the
+global `__GP_CONFIG__`, which `src/config.ts` exposes as `CONFIG`. `vitest.config.mjs` injects the committed defaults
+the same way, so tests see a real config without a build. Branding also goes into `manifest.json` and the `%APP_NAME%`
+placeholders in the HTML pages. See [CONFIGURATION.md](CONFIGURATION.md).
+ All bundles are IIFE (content scripts can't be ES modules). `static/` is copied as-is; the build writes the version
 from `package.json` into the manifest, and dev builds add `*.map` to `web_accessible_resources` so DevTools can load
 source maps.
 
@@ -40,16 +49,35 @@ Defined in `src/lib/types.ts`, read and written through `Store` in `src/lib/stor
 
 | Storage key | Shape | Notes |
 |---|---|---|
-| `schemaVersion` | number | Currently 1. `migrate()` refuses data from a newer version |
-| `settings` | `Settings` | Active playbooks, onboarded flag, daily cap, send interval, your name. Always passed through `sanitizeSettings()` (clamps cap 1–400, interval 10–600 s) |
-| `templates` | `Template[]` | Starter templates are seeded on first run. `playbookId` is a playbook or `custom` |
-| `stages` | `Stage[]` | Seeded from `playbooks.ts`; fixed in v0.1 |
+| `schemaVersion` | number | Currently 2. `migrate()` refuses data from a newer version and upgrades older data |
+| `settings` | `Settings` | Active playbooks, onboarded flag, daily cap, send interval, your name. Always passed through `sanitizeSettings()`, which clamps to the configured limits and drops unknown playbooks |
+| `playbooks` | `Playbook[]` | Bundled (`builtIn: true`) and user-created playbooks: id, name, blurb |
+| `seededPlaybooks` | `string[]` | Bundled playbook ids already added once, so a deleted one isn't re-added and a newly shipped one is added on update |
+| `templates` | `Template[]` | Starter templates are seeded per playbook. `playbookId` is a playbook id or `custom` |
+| `stages` | `Stage[]` | Seeded per playbook, then freely edited in Settings. Ids are `<playbook>:<key>` for bundled stages and `<playbook>:<random>` for added ones |
 | `thread:<account>:<threadId>` | `TrackedThread` | One key per tracked conversation, so two tabs editing different threads never overwrite each other |
 | `campaign:<id>` | `Campaign` | One key per mail merge: rows, cursor, log, status, heartbeat, in-flight row |
 | `sendCounter` | `{ date, count }` | Merge and test sends for the local calendar day |
 
 Threads are keyed by Gmail account (lower-cased) plus InboxSDK's thread id, and every screen filters by the signed-in
 account. `migrate()` drops malformed entries instead of failing, so a hand-edited or partial store still loads.
+
+### Schema history
+
+| Version | Change | Migration |
+|---|---|---|
+| 1 | First release, fixed playbooks | – |
+| 2 | Playbooks become data (`playbooks`, `seededPlaybooks`); user playbooks and stage editing | v1 stores get the bundled playbooks as data; stages, templates, threads and settings are kept |
+
+### Playbook and stage editing
+
+`Store` methods keep references consistent:
+
+- `createPlaybook` adds the playbook and its stages and switches it on.
+- `deleteStage` requires a target stage when conversations use the stage, moves them, then renumbers the rest. The last
+  stage of a playbook can't be deleted.
+- `deletePlaybook` refuses while conversations are on its stages, and moves its templates to My templates.
+- `ensureInitialized` adds bundled playbooks the browser hasn't seen yet, switched off.
 
 ### Live updates
 
@@ -152,4 +180,6 @@ be unit-tested with a fake clock.
 3. Render UI with Preact into the element InboxSDK gives you, and unmount it on the view's `destroy` event.
 4. Scope CSS under `.gp-root` with `gp-` class names in `static/gp.css`, using the theme tokens so dark mode works.
 5. If you add stored data, extend `types.ts`, `migrate()` and the backup round-trip test. Bump `SCHEMA_VERSION` if old
-   data needs converting.
+   data needs converting, and add a row to the schema history above.
+6. Anything a deployer might want to change belongs in configuration, not in code (see
+   [CONFIGURATION.md](CONFIGURATION.md#adding-a-setting)).

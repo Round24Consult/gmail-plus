@@ -1,14 +1,16 @@
 // InboxSDK's worker injects pageWorld.js into Gmail. It must load first.
 import '@inboxsdk/core/background.js';
-import { FOLLOW_UP_ALARM, FOLLOW_UP_ALARM_PREFIX, NOTIFICATION_PREFIX, type ExtensionMessage } from '../config';
+import { CONFIG, FOLLOW_UP_ALARM, FOLLOW_UP_ALARM_PREFIX, NOTIFICATION_PREFIX, type ExtensionMessage } from '../config';
 import { Store } from '../lib/storage';
 import { chromeArea } from '../shared/chromeArea';
 
 const store = new Store(chromeArea);
 
 function ensureAlarm(): void {
+  const period = CONFIG.followUps.sweepMinutes;
   void chrome.alarms.get(FOLLOW_UP_ALARM).then((existing) => {
-    if (!existing) void chrome.alarms.create(FOLLOW_UP_ALARM, { periodInMinutes: 15, delayInMinutes: 1 });
+    // Recreate when missing or when a new build changed the sweep interval.
+    if (!existing || existing.periodInMinutes !== period) void chrome.alarms.create(FOLLOW_UP_ALARM, { periodInMinutes: period, delayInMinutes: 1 });
   });
 }
 

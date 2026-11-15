@@ -1,0 +1,23 @@
+{
+  "appName": "Gmail Plus",
+  "appShortName": "Gmail Plus",
+  "appSlug": "gmail-plus",
+  "appDescription": "Quick-reply templates, a light pipeline, follow-up reminders, contact export and mail merge inside Gmail. Runs locally.",
+  "inboxSdkAppId": "",
+  "supportEmail": "",
+  "homepageUrl": "https://github.com/Round24Consult/gmail-plus",
+  "privacyPolicyUrl": "",
+  "mailMerge": {
+    "defaultDailyCap": 100,
+    "maxDailyCap": 400,
+    "defaultIntervalSec": 30,
+    "minIntervalSec": 10,
+    "maxIntervalSec": 600,
+    "maxRecipients": 2000
+  },
+  "followUps": {
+    "sweepMinutes": 15,
+    "reminderHour": 9
+  },
+  "defaultPlaybooks": []
+}

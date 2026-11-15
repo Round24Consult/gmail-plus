@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { toCsv } from '../../lib/csv';
-import { PLAYBOOKS, stagesFor } from '../../lib/playbooks';
+import { APP_NAME } from '../../config';
+import { orderedActive, playbookName, stagesFor } from '../../lib/playbooks';
 import { threadKey } from '../../lib/storage';
 import type { PlaybookId, Stage, StoreData, TrackedThread } from '../../lib/types';
 import { downloadText, todayStamp } from '../../shared/download';
@@ -30,7 +31,7 @@ function exportPipeline(data: StoreData, threads: TrackedThread[]): void {
       email: t.contact?.email ?? '',
       subject: t.subject,
       stage: stage?.name ?? '',
-      playbook: PLAYBOOKS.find((p) => p.id === stage?.playbookId)?.name ?? '',
+      playbook: stage ? playbookName(data.playbooks, stage.playbookId) : '',
       follow_up: t.followUpAt && !t.followUpDone ? new Date(t.followUpAt).toISOString() : '',
       notes: t.notes,
       updated: new Date(t.updatedAt).toISOString(),
@@ -73,7 +74,7 @@ function Card({ ctx, t, stages, now }: { ctx: Ctx; t: TrackedThread; stages: Sta
 
 export function Board({ ctx }: { ctx: Ctx }) {
   const data = useData();
-  const active = data.settings.playbooks;
+  const active = orderedActive(data.playbooks, data.settings.playbooks).map((p) => p.id);
   const [picked, setPicked] = useState<PlaybookId | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -131,7 +132,7 @@ export function Board({ ctx }: { ctx: Ctx }) {
               onClick={() => setPicked(id)}
               key={id}
             >
-              {PLAYBOOKS.find((p) => p.id === id)?.name}
+              {playbookName(data.playbooks, id)}
             </button>
           ))}
         </div>
@@ -158,7 +159,7 @@ export function Board({ ctx }: { ctx: Ctx }) {
 
       {mine.length === 0 && (
         <p class="gp-muted">
-          Nothing here yet. Open any conversation and choose a stage in the Gmail Plus side panel, or add people
+          Nothing here yet. Open any conversation and choose a stage in the {APP_NAME} side panel, or add people
           automatically when you send a mail merge.
         </p>
       )}

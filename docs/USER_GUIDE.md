@@ -181,6 +181,12 @@ Open from the popup (**Settings**), from **Edit templates…** in the compose me
 Gmail Plus → **Extension options**.
 
 - **Playbooks:** switch playbooks on and off. Turning one off hides its stages and templates in Gmail but keeps your data.
+- **Playbooks and stages:** open a playbook to rename it or edit its stages.
+  - **Change a stage:** its colour, its name, or **Closed** (end states such as won or lost).
+  - **Reorder** with the arrows; **Add stage** adds one at the end.
+  - **Delete a stage:** if conversations are on it, you first choose a stage to move them to.
+  - **New playbook** creates your own, starting with New, In progress and Done.
+  - **Delete playbook** works once no conversations are on its stages; its templates move to My templates.
 - **You:** your name for `{{myName}}`.
 - **Mail merge limits:** most emails per day (1 to 400) and seconds between emails (10 to 600).
 - **Templates:**

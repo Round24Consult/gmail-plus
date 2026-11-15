@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { CONFIG } from '../../config';
 import { parseRecipientCsv, toCsv, type ParsedRecipients } from '../../lib/csv';
 import { stagesFor, templatesFor } from '../../lib/playbooks';
 import { dayKey } from '../../lib/storage';
@@ -21,7 +22,7 @@ import {
   stopActive,
 } from '../mergeRunner';
 
-const MAX_ROWS = 2000;
+const MAX_ROWS = CONFIG.mailMerge.maxRecipients;
 
 function useRun() {
   const [, setTick] = useState(0);

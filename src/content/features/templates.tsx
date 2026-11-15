@@ -1,9 +1,10 @@
 import type { ComposeView } from '@inboxsdk/core';
 import { render } from 'preact';
 import { useMemo, useState } from 'preact/hooks';
-import { PLAYBOOKS, templatesFor } from '../../lib/playbooks';
+import { APP_NAME } from '../../config';
+import { orderedActive, templatesFor } from '../../lib/playbooks';
 import { buildContext, render as renderText, renderHtml } from '../../lib/template';
-import type { Template } from '../../lib/types';
+import { CUSTOM_OWNER, type Template } from '../../lib/types';
 import { useData } from '../../shared/live';
 import { iconUrl, myName, openSettings, type Ctx } from '../context';
 
@@ -52,7 +53,7 @@ function TemplateMenu({ ctx, cv, onDone }: { ctx: Ctx; cv: ComposeView; onDone: 
     const q = query.trim().toLowerCase();
     return q ? templates.filter((t) => `${t.name} ${t.body}`.toLowerCase().includes(q)) : templates;
   }, [templates, query]);
-  const groups = [...PLAYBOOKS.map((p) => ({ id: p.id as Template['playbookId'], name: p.name })), { id: 'custom' as const, name: 'My templates' }]
+  const groups = [...orderedActive(data.playbooks, data.settings.playbooks).map((p) => ({ id: p.id, name: p.name })), { id: CUSTOM_OWNER, name: 'My templates' }]
     .map((g) => ({ ...g, items: filtered.filter((t) => t.playbookId === g.id) }))
     .filter((g) => g.items.length);
 
@@ -107,7 +108,7 @@ function TemplateMenu({ ctx, cv, onDone }: { ctx: Ctx; cv: ComposeView; onDone: 
 export function registerTemplates(ctx: Ctx): void {
   ctx.sdk.Compose.registerComposeViewHandler((cv) => {
     cv.addButton({
-      title: 'Templates (Gmail Plus)',
+      title: `Templates (${APP_NAME})`,
       iconUrl: iconUrl('template'),
       hasDropdown: true,
       type: 'MODIFIER',

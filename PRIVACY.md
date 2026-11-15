@@ -41,3 +41,6 @@ No data is sold, shared or used for advertising. No one but you can see it.
 ## Contact
 
 Questions: info@round24consult.com
+
+_If you publish your own build of this open-source extension, replace this contact and review the policy for any
+changes you make._

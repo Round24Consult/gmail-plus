@@ -15,8 +15,8 @@
    npm run package
    ```
 
-   This writes `release/gmail-plus-<version>.zip`: a minified build without source maps, with " (dev)" removed from the
-   extension name.
+   This writes `release/<APP_SLUG>-<version>.zip`: a minified build without source maps, with " (dev)" removed from the
+   extension name. Make sure `.env` (or the CI variables) holds the production `INBOXSDK_APP_ID`, `APP_NAME` and links.
 4. Load the unpacked production build (`dist/` after `npm run build:prod`) and run the manual Gmail checklist in
    [CONTRIBUTING.md](../CONTRIBUTING.md#manual-gmail-checklist).
 5. Commit, tag (`git tag v<version>`) and push the tag.
@@ -24,11 +24,11 @@
 
 ## Before the first Chrome Web Store submission
 
-- [ ] **Brand name.** Google's trademark rules don't allow a store name that starts with "Gmail". Use "<Brand> for
-      Gmail". Update `name`, `short_name` and `action.default_title` in `static/manifest.json`, and `APP_NAME` in
-      `src/config.ts`.
-- [ ] **InboxSDK app id.** Already registered: `sdk_GPlusSettings_a5074a55a5` in `src/config.ts`. If the brand changes,
-      a new id with a matching label can be registered at <https://register.inboxsdk.com/>.
+- [ ] **Brand name.** Google's trademark rules don't allow a store name that starts with "Gmail". Set `APP_NAME`,
+      `APP_SHORT_NAME` and `APP_SLUG` ([CONFIGURATION.md](CONFIGURATION.md)); the build writes them into the manifest.
+- [ ] **InboxSDK app id.** Register your own at <https://register.inboxsdk.com/> and set `INBOXSDK_APP_ID` in `.env`
+      and as a repository variable for CI. Each publisher should use their own id.
+- [ ] **Links.** Set `SUPPORT_EMAIL`, `HOMEPAGE_URL` and `PRIVACY_POLICY_URL`; they appear in Settings.
 - [ ] **Developer account.** Register for the Chrome Web Store with a company Google account (one-time fee), and verify
       the publisher email.
 - [ ] **Privacy policy URL.** Host [PRIVACY.md](../PRIVACY.md) publicly, for example on round24consult.com or GitHub

@@ -1,3 +1,5 @@
+import { CONFIG } from '../config';
+
 const DAY = 24 * 60 * 60 * 1000;
 
 export function startOfDay(ts: number): number {
@@ -15,11 +17,11 @@ export function relativeDue(when: number, now = Date.now()): { label: string; to
   return { label: `In ${days}d`, tone: 'soon' };
 }
 
-/** 9:00 local time, `days` days from now. */
-export function morningIn(days: number, now = Date.now()): number {
+/** The configured reminder hour (default 9:00) local time, `days` days from now. */
+export function morningIn(days: number, now = Date.now(), hour = CONFIG.followUps.reminderHour): number {
   const d = new Date(now);
   d.setDate(d.getDate() + days);
-  d.setHours(9, 0, 0, 0);
+  d.setHours(hour, 0, 0, 0);
   return d.getTime();
 }
 

@@ -1,0 +1,73 @@
+{
+  "id": "recruiter",
+  "name": "Recruiter",
+  "blurb": "Candidate outreach, screening and interviews.",
+  "order": 20,
+  "stages": [
+    {
+      "key": "sourced",
+      "name": "Sourced",
+      "color": "#5f6368"
+    },
+    {
+      "key": "contacted",
+      "name": "Contacted",
+      "color": "#1a73e8"
+    },
+    {
+      "key": "screening",
+      "name": "Screening",
+      "color": "#9334e6"
+    },
+    {
+      "key": "interview",
+      "name": "Interview",
+      "color": "#e37400"
+    },
+    {
+      "key": "offer",
+      "name": "Offer",
+      "color": "#007b83"
+    },
+    {
+      "key": "hired",
+      "name": "Hired",
+      "color": "#188038",
+      "closed": true
+    },
+    {
+      "key": "closed",
+      "name": "Closed",
+      "color": "#c5221f",
+      "closed": true
+    }
+  ],
+  "templates": [
+    {
+      "key": "outreach",
+      "emoji": "👋",
+      "name": "Outreach",
+      "subject": "A role you might like",
+      "body": "Hi {{firstName|there}},\n\nI came across your profile and think you could be a strong fit for a role I'm hiring for. Would you be open to a short call this week?\n\nBest,\n{{myName}}"
+    },
+    {
+      "key": "schedule",
+      "emoji": "📅",
+      "name": "Schedule interview",
+      "subject": "Interview times",
+      "body": "Hi {{firstName|there}},\n\nThanks for your time so far. Could you share a few slots that work for an interview next week?\n\nBest,\n{{myName}}"
+    },
+    {
+      "key": "follow-up",
+      "emoji": "🔁",
+      "name": "Follow up",
+      "body": "Hi {{firstName|there}},\n\nJust following up on my last note. If the timing isn't right, no problem at all, just let me know.\n\nBest,\n{{myName}}"
+    },
+    {
+      "key": "decline",
+      "emoji": "🙏",
+      "name": "Not moving forward",
+      "body": "Hi {{firstName|there}},\n\nThank you for the time you put into the process. We've decided to move forward with other candidates for this role, but I'd be glad to keep in touch about future openings.\n\nBest wishes,\n{{myName}}"
+    }
+  ]
+}

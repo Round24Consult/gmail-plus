@@ -1,27 +1,29 @@
 import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
-import { APP_NAME } from '../config';
-import { PLAYBOOKS, SEED_TEMPLATES } from '../lib/playbooks';
+import { APP_NAME, CONFIG } from '../config';
+import { makePlaybookId, playbookName, SEED_TEMPLATES } from '../lib/playbooks';
 import { SEND_CAP_CEILING, SEND_INTERVAL_MAX_SEC, SEND_INTERVAL_MIN_SEC } from '../lib/storage';
-import type { OwnerId, PlaybookId, Settings, StoreData, Template } from '../lib/types';
+import { CUSTOM_OWNER, type OwnerId, type Playbook, type PlaybookId, type Settings, type Stage, type StoreData, type Template } from '../lib/types';
 import { downloadText, todayStamp } from '../shared/download';
 import { initLive, store, useData } from '../shared/live';
+
+const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 function Playbooks({ data }: { data: StoreData }) {
   const toggle = (id: PlaybookId, on: boolean) => {
     const next = on ? [...data.settings.playbooks, id] : data.settings.playbooks.filter((p) => p !== id);
-    void store.saveSettings({ playbooks: PLAYBOOKS.map((p) => p.id).filter((p) => next.includes(p)) });
+    void store.saveSettings({ playbooks: data.playbooks.map((p) => p.id).filter((p) => next.includes(p)) });
   };
   return (
     <section id="playbooks" class="gp-section">
       <h2 class="gp-h2">Playbooks</h2>
       <p class="gp-muted">Pick what you use Gmail for. Each playbook brings its own pipeline stages and reply templates.</p>
       <div class="gp-cards">
-        {PLAYBOOKS.map((p) => (
+        {data.playbooks.map((p) => (
           <label class={`gp-option ${data.settings.playbooks.includes(p.id) ? 'gp-option-on' : ''}`} key={p.id}>
             <input type="checkbox" checked={data.settings.playbooks.includes(p.id)} onChange={(e) => toggle(p.id, (e.target as HTMLInputElement).checked)} />
             <strong>{p.name}</strong>
-            <span class="gp-muted gp-small">{p.blurb}</span>
+            {p.blurb && <span class="gp-muted gp-small">{p.blurb}</span>}
           </label>
         ))}
       </div>
@@ -38,6 +40,201 @@ function Playbooks({ data }: { data: StoreData }) {
           Done, open Gmail
         </button>
       )}
+    </section>
+  );
+}
+
+function TextField({ value, onSave, label, placeholder }: { value: string; onSave: (v: string) => void; label: string; placeholder?: string }) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  return (
+    <input
+      class="gp-input"
+      aria-label={label}
+      placeholder={placeholder}
+      value={text}
+      onInput={(e) => setText((e.target as HTMLInputElement).value)}
+      onBlur={() => text.trim() && text !== value && onSave(text.trim())}
+    />
+  );
+}
+
+function StageRow({ stage, siblings, count, isFirst, isLast, onChange, onMove, onError }: {
+  stage: Stage;
+  siblings: Stage[];
+  count: number;
+  isFirst: boolean;
+  isLast: boolean;
+  onChange: (patch: Partial<Stage>) => void;
+  onMove: (dir: -1 | 1) => void;
+  onError: (msg: string) => void;
+}) {
+  const [deleting, setDeleting] = useState(false);
+  const [moveTo, setMoveTo] = useState('');
+  const others = siblings.filter((s) => s.id !== stage.id);
+  const remove = async () => {
+    try {
+      await store.deleteStage(stage.id, count ? moveTo : undefined);
+      setDeleting(false);
+    } catch (err) {
+      onError(errorText(err));
+    }
+  };
+  return (
+    <div class="gp-stage-row">
+      <input type="color" class="gp-color" aria-label="Colour" value={stage.color} onChange={(e) => onChange({ color: (e.target as HTMLInputElement).value })} />
+      <TextField label="Stage name" value={stage.name} onSave={(name) => onChange({ name })} />
+      <label class="gp-check gp-small" title="Closed stages (won, lost, done) don't count as open work">
+        <input type="checkbox" checked={!!stage.closed} onChange={(e) => onChange({ closed: (e.target as HTMLInputElement).checked || undefined })} />
+        Closed
+      </label>
+      <span class="gp-muted gp-small gp-stage-count">{count} tracked</span>
+      <button type="button" class="gp-btn gp-btn-ghost" aria-label="Move up" disabled={isFirst} onClick={() => onMove(-1)}>↑</button>
+      <button type="button" class="gp-btn gp-btn-ghost" aria-label="Move down" disabled={isLast} onClick={() => onMove(1)}>↓</button>
+      {!deleting ? (
+        <button type="button" class="gp-btn gp-btn-ghost gp-danger" disabled={!others.length} onClick={() => (count ? setDeleting(true) : void remove())}>
+          Delete
+        </button>
+      ) : (
+        <span class="gp-row">
+          <select class="gp-input" value={moveTo} onChange={(e) => setMoveTo((e.target as HTMLSelectElement).value)}>
+            <option value="">Move {count} to…</option>
+            {others.map((s) => <option value={s.id} key={s.id}>{s.name}</option>)}
+          </select>
+          <button type="button" class="gp-btn gp-btn-danger" disabled={!moveTo} onClick={remove}>Move and delete</button>
+          <button type="button" class="gp-btn gp-btn-ghost" onClick={() => setDeleting(false)}>Cancel</button>
+        </span>
+      )}
+    </div>
+  );
+}
+
+function PlaybookEditor({ data, playbook }: { data: StoreData; playbook: Playbook }) {
+  const [error, setError] = useState('');
+  const stages = data.stages.filter((s) => s.playbookId === playbook.id).sort((a, b) => a.order - b.order);
+  const counts = new Map<string, number>();
+  for (const t of Object.values(data.threads)) counts.set(t.stageId, (counts.get(t.stageId) ?? 0) + 1);
+  const tracked = stages.reduce((n, s) => n + (counts.get(s.id) ?? 0), 0);
+
+  const saveOwnStages = (next: Stage[]) => {
+    const ordered = next.map((s, order) => ({ ...s, order }));
+    void store.saveStages([...data.stages.filter((s) => s.playbookId !== playbook.id), ...ordered]);
+  };
+  const patchStage = (id: string, patch: Partial<Stage>) =>
+    saveOwnStages(stages.map((s) => {
+      if (s.id !== id) return s;
+      const next = { ...s, ...patch };
+      if (!next.closed) delete next.closed;
+      return next;
+    }));
+  const move = (index: number, dir: -1 | 1) => {
+    const next = [...stages];
+    const [item] = next.splice(index, 1);
+    if (item) next.splice(index + dir, 0, item);
+    saveOwnStages(next);
+  };
+  const addStage = () =>
+    saveOwnStages([...stages, { id: `${playbook.id}:${crypto.randomUUID().slice(0, 8)}`, name: 'New stage', color: '#5f6368', order: stages.length, playbookId: playbook.id }]);
+  const patchPlaybook = (patch: Partial<Playbook>) => void store.savePlaybooks(data.playbooks.map((p) => (p.id === playbook.id ? { ...p, ...patch } : p)));
+
+  return (
+    <details class="gp-card gp-pb">
+      <summary class="gp-pb-head">
+        <strong>{playbook.name}</strong>
+        <span class="gp-muted gp-small">
+          {stages.length} stages · {tracked} tracked{playbook.builtIn ? ' · built in' : ''}
+          {!data.settings.playbooks.includes(playbook.id) && ' · off'}
+        </span>
+      </summary>
+      <div class="gp-row gp-wrap">
+        <TextField label="Playbook name" value={playbook.name} onSave={(name) => patchPlaybook({ name })} />
+        <TextField label="Description" placeholder="Short description" value={playbook.blurb} onSave={(blurb) => patchPlaybook({ blurb })} />
+      </div>
+      <div class="gp-label">Stages, in pipeline order</div>
+      {stages.map((s, i) => (
+        <StageRow
+          key={s.id}
+          stage={s}
+          siblings={stages}
+          count={counts.get(s.id) ?? 0}
+          isFirst={i === 0}
+          isLast={i === stages.length - 1}
+          onChange={(patch) => patchStage(s.id, patch)}
+          onMove={(dir) => move(i, dir)}
+          onError={setError}
+        />
+      ))}
+      <div class="gp-row gp-spread">
+        <button type="button" class="gp-btn" onClick={addStage}>Add stage</button>
+        <button
+          type="button"
+          class="gp-btn gp-btn-ghost gp-danger"
+          onClick={async () => {
+            try {
+              await store.deletePlaybook(playbook.id);
+            } catch (err) {
+              setError(errorText(err));
+            }
+          }}
+        >
+          Delete playbook
+        </button>
+      </div>
+      {error && <p class="gp-error gp-small">{error}</p>}
+    </details>
+  );
+}
+
+function NewPlaybook({ data }: { data: StoreData }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [blurb, setBlurb] = useState('');
+  const [error, setError] = useState('');
+  if (!open) return <button type="button" class="gp-btn gp-btn-primary" onClick={() => setOpen(true)}>New playbook</button>;
+  return (
+    <form
+      class="gp-card gp-form"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (!name.trim()) return;
+        try {
+          await store.createPlaybook({ id: makePlaybookId(name, data.playbooks.map((p) => p.id)), name: name.trim(), blurb: blurb.trim() }, [
+            { name: 'New', color: '#1a73e8' },
+            { name: 'In progress', color: '#e37400' },
+            { name: 'Done', color: '#188038', closed: true },
+          ]);
+          setOpen(false);
+          setName('');
+          setBlurb('');
+        } catch (err) {
+          setError(errorText(err));
+        }
+      }}
+    >
+      <input class="gp-input" placeholder="Name, e.g. Real estate" value={name} required onInput={(e) => setName((e.target as HTMLInputElement).value)} />
+      <input class="gp-input" placeholder="Short description (optional)" value={blurb} onInput={(e) => setBlurb((e.target as HTMLInputElement).value)} />
+      <p class="gp-muted gp-small">It starts with three stages (New, In progress, Done) that you can rename, reorder and extend.</p>
+      <div class="gp-row">
+        <button type="submit" class="gp-btn gp-btn-primary">Create</button>
+        <button type="button" class="gp-btn gp-btn-ghost" onClick={() => setOpen(false)}>Cancel</button>
+      </div>
+      {error && <p class="gp-error gp-small">{error}</p>}
+    </form>
+  );
+}
+
+function PlaybookManager({ data }: { data: StoreData }) {
+  return (
+    <section id="stages" class="gp-section">
+      <div class="gp-row gp-spread">
+        <h2 class="gp-h2">Playbooks and stages</h2>
+        <NewPlaybook data={data} />
+      </div>
+      <p class="gp-muted">
+        Rename playbooks, add or reorder stages, or create a playbook for your own kind of work. Deleting a playbook keeps its
+        templates under My templates.
+      </p>
+      {data.playbooks.map((p) => <PlaybookEditor key={p.id} data={data} playbook={p} />)}
     </section>
   );
 }
@@ -88,7 +285,7 @@ function General({ settings }: { settings: Settings }) {
           value={settings.dailySendCap}
           min={1}
           max={SEND_CAP_CEILING}
-          hint={`Up to ${SEND_CAP_CEILING}. Gmail allows about 500 a day on personal accounts, and your own sends count too.`}
+          hint={`1 to ${SEND_CAP_CEILING}. Gmail allows about 500 a day on personal accounts and 2,000 on Workspace, and your own sends count too.`}
           onSave={(n) => void store.saveSettings({ dailySendCap: n })}
         />
         <NumberField
@@ -104,16 +301,10 @@ function General({ settings }: { settings: Settings }) {
   );
 }
 
-const OWNER_LABEL: Record<OwnerId, string> = {
-  freelancer: 'Freelancer / agency',
-  recruiter: 'Recruiter',
-  support: 'Shop / support',
-  custom: 'My templates',
-};
-
-function TemplateForm({ initial, onSave, onCancel }: { initial: Template; onSave: (t: Template) => void; onCancel: () => void }) {
+function TemplateForm({ data, initial, onSave, onCancel }: { data: StoreData; initial: Template; onSave: (t: Template) => void; onCancel: () => void }) {
   const [t, setT] = useState(initial);
   const set = (patch: Partial<Template>) => setT({ ...t, ...patch });
+  const owners: OwnerId[] = [...data.playbooks.map((p) => p.id), CUSTOM_OWNER];
   return (
     <form
       class="gp-card gp-form"
@@ -125,8 +316,8 @@ function TemplateForm({ initial, onSave, onCancel }: { initial: Template; onSave
       <div class="gp-row">
         <input class="gp-input gp-emoji" aria-label="Emoji" value={t.emoji} maxLength={4} onInput={(e) => set({ emoji: (e.target as HTMLInputElement).value })} />
         <input class="gp-input" aria-label="Name" placeholder="Name" value={t.name} onInput={(e) => set({ name: (e.target as HTMLInputElement).value })} required />
-        <select class="gp-input" aria-label="Group" value={t.playbookId} onChange={(e) => set({ playbookId: (e.target as HTMLSelectElement).value as OwnerId })}>
-          {(Object.keys(OWNER_LABEL) as OwnerId[]).map((o) => <option value={o} key={o}>{OWNER_LABEL[o]}</option>)}
+        <select class="gp-input" aria-label="Group" value={t.playbookId} onChange={(e) => set({ playbookId: (e.target as HTMLSelectElement).value })}>
+          {owners.map((o) => <option value={o} key={o}>{playbookName(data.playbooks, o)}</option>)}
         </select>
       </div>
       <input class="gp-input" placeholder="Subject for new emails and mail merge (optional)" value={t.subject ?? ''} onInput={(e) => set({ subject: (e.target as HTMLInputElement).value })} />
@@ -150,8 +341,8 @@ function Templates({ data }: { data: StoreData }) {
     setEditing(null);
   };
   const remove = (id: string) => void store.saveTemplates(data.templates.filter((x) => x.id !== id));
-  const missingSeeds = SEED_TEMPLATES.filter((s) => !data.templates.some((t) => t.id === s.id));
-  const owners = Object.keys(OWNER_LABEL) as OwnerId[];
+  const missingSeeds = SEED_TEMPLATES.filter((s) => data.playbooks.some((p) => p.id === s.playbookId) && !data.templates.some((t) => t.id === s.id));
+  const owners: OwnerId[] = [...data.playbooks.map((p) => p.id), CUSTOM_OWNER];
 
   return (
     <section id="templates" class="gp-section">
@@ -160,23 +351,23 @@ function Templates({ data }: { data: StoreData }) {
         <button
           type="button"
           class="gp-btn gp-btn-primary"
-          onClick={() => setEditing({ id: crypto.randomUUID(), name: '', emoji: '⭐', body: 'Hi {{firstName|there}},\n\n\n\n{{myName}}', playbookId: 'custom' })}
+          onClick={() => setEditing({ id: crypto.randomUUID(), name: '', emoji: '⭐', body: 'Hi {{firstName|there}},\n\n\n\n{{myName}}', playbookId: CUSTOM_OWNER })}
         >
           New template
         </button>
       </div>
       <p class="gp-muted">Templates from switched-off playbooks stay here but are hidden in Gmail.</p>
-      {editing && !data.templates.some((t) => t.id === editing.id) && <TemplateForm initial={editing} onSave={save} onCancel={() => setEditing(null)} />}
+      {editing && !data.templates.some((t) => t.id === editing.id) && <TemplateForm data={data} initial={editing} onSave={save} onCancel={() => setEditing(null)} />}
       {owners.map((o) => {
         const list = data.templates.filter((t) => t.playbookId === o);
         if (!list.length) return null;
-        const off = o !== 'custom' && !data.settings.playbooks.includes(o);
+        const off = o !== CUSTOM_OWNER && !data.settings.playbooks.includes(o);
         return (
           <div key={o}>
-            <h3 class="gp-h3">{OWNER_LABEL[o]}{off && <span class="gp-muted"> (off)</span>}</h3>
+            <h3 class="gp-h3">{playbookName(data.playbooks, o)}{off && <span class="gp-muted"> (off)</span>}</h3>
             {list.map((t) =>
               editing?.id === t.id ? (
-                <TemplateForm key={t.id} initial={t} onSave={save} onCancel={() => setEditing(null)} />
+                <TemplateForm key={t.id} data={data} initial={t} onSave={save} onCancel={() => setEditing(null)} />
               ) : (
                 <div class="gp-tpl" key={t.id}>
                   <span class="gp-menu-emoji" aria-hidden="true">{t.emoji}</span>
@@ -208,11 +399,11 @@ function DataSection() {
     <section id="data" class="gp-section">
       <h2 class="gp-h2">Your data</h2>
       <p class="gp-muted">
-        Everything {APP_NAME} saves (settings, templates, pipeline, follow-ups and mail merge lists) stays in this browser. A
-        backup file moves it to another computer.
+        Everything {APP_NAME} saves (settings, playbooks, templates, pipeline, follow-ups and mail merge lists) stays in this
+        browser. A backup file moves it to another computer.
       </p>
       <div class="gp-row gp-wrap">
-        <button type="button" class="gp-btn" onClick={async () => downloadText(`gmail-plus-backup-${todayStamp()}.json`, await store.exportBackup(), 'application/json')}>
+        <button type="button" class="gp-btn" onClick={async () => downloadText(`${CONFIG.appSlug}-backup-${todayStamp()}.json`, await store.exportBackup(), 'application/json')}>
           Download backup
         </button>
         <label class="gp-btn">
@@ -229,7 +420,7 @@ function DataSection() {
                 await store.importBackup(await file.text());
                 setMessage('Backup restored.');
               } catch (err) {
-                setMessage(err instanceof Error ? err.message : String(err));
+                setMessage(errorText(err));
               }
             }}
           />
@@ -259,7 +450,13 @@ function DataSection() {
   );
 }
 
-function Privacy() {
+function About() {
+  let version = '';
+  try {
+    version = chrome.runtime.getManifest().version;
+  } catch {
+    // not running as an extension page
+  }
   return (
     <section id="privacy" class="gp-section">
       <h2 class="gp-h2">Privacy</h2>
@@ -267,6 +464,29 @@ function Privacy() {
         {APP_NAME} works inside the Gmail page you already have open. It does not connect to any server, does not use the Gmail
         API, and does not send your emails, contacts or lists anywhere. InboxSDK's optional error and usage reporting is switched
         off. Mail merge emails go out through your own Gmail compose window, exactly as if you had sent them yourself.
+        {CONFIG.privacyPolicyUrl && (
+          <>
+            {' '}
+            <a href={CONFIG.privacyPolicyUrl} target="_blank" rel="noreferrer">Full privacy policy</a>.
+          </>
+        )}
+      </p>
+      <h2 class="gp-h2">About</h2>
+      <p class="gp-small">
+        {APP_NAME}
+        {version && ` ${version}`}
+        {CONFIG.homepageUrl && (
+          <>
+            {' · '}
+            <a href={CONFIG.homepageUrl} target="_blank" rel="noreferrer">Source and docs</a>
+          </>
+        )}
+        {CONFIG.supportEmail && (
+          <>
+            {' · '}
+            <a href={`mailto:${CONFIG.supportEmail}`}>{CONFIG.supportEmail}</a>
+          </>
+        )}
       </p>
     </section>
   );
@@ -275,6 +495,7 @@ function Privacy() {
 function App() {
   const data = useData();
   useEffect(() => {
+    document.title = `${APP_NAME} settings`;
     const id = decodeURIComponent(location.hash.slice(1));
     if (id) requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ block: 'start' }));
   }, []);
@@ -286,6 +507,7 @@ function App() {
       </header>
       <nav class="gp-row gp-wrap gp-small">
         <a href="#playbooks">Playbooks</a>
+        <a href="#stages">Stages</a>
         <a href="#you">You</a>
         <a href="#sending">Limits</a>
         <a href="#templates">Templates</a>
@@ -293,10 +515,11 @@ function App() {
         <a href="#privacy">Privacy</a>
       </nav>
       <Playbooks data={data} />
+      <PlaybookManager data={data} />
       <General settings={data.settings} />
       <Templates data={data} />
       <DataSection />
-      <Privacy />
+      <About />
     </main>
   );
 }

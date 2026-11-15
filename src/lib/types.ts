@@ -1,5 +1,16 @@
-export type PlaybookId = 'freelancer' | 'recruiter' | 'support';
-export type OwnerId = PlaybookId | 'custom';
+/** Playbook ids come from playbooks/*.json or are created by the user in Settings. */
+export type PlaybookId = string;
+/** A playbook id, or 'custom' for the user's own templates group. */
+export type OwnerId = string;
+export const CUSTOM_OWNER = 'custom';
+
+export interface Playbook {
+  id: PlaybookId;
+  name: string;
+  blurb: string;
+  /** Shipped in playbooks/*.json (as opposed to created by the user). */
+  builtIn: boolean;
+}
 
 export interface Template {
   id: string;
@@ -92,6 +103,9 @@ export interface SendCounter {
 export interface StoreData {
   schemaVersion: number;
   settings: Settings;
+  playbooks: Playbook[];
+  /** Ids of bundled playbooks already added once, so a deleted one is not re-added on update. */
+  seededPlaybooks: string[];
   templates: Template[];
   stages: Stage[];
   threads: Record<string, TrackedThread>;

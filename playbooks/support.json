@@ -1,0 +1,50 @@
+{
+  "id": "support",
+  "name": "Shop / support",
+  "blurb": "Customer questions, orders and quick replies.",
+  "order": 30,
+  "stages": [
+    {
+      "key": "new",
+      "name": "New",
+      "color": "#1a73e8"
+    },
+    {
+      "key": "waiting",
+      "name": "Waiting on customer",
+      "color": "#e37400"
+    },
+    {
+      "key": "resolved",
+      "name": "Resolved",
+      "color": "#188038",
+      "closed": true
+    }
+  ],
+  "templates": [
+    {
+      "key": "greeting",
+      "emoji": "👋",
+      "name": "Greeting",
+      "body": "Hi {{firstName|there}},\n\nThanks for getting in touch. We've received your message and will get back to you shortly.\n\n{{myName}}"
+    },
+    {
+      "key": "order-status",
+      "emoji": "📦",
+      "name": "Order status",
+      "body": "Hi {{firstName|there}},\n\nYour order is on its way and should arrive within the next few days. I'll let you know if anything changes.\n\n{{myName}}"
+    },
+    {
+      "key": "need-info",
+      "emoji": "❓",
+      "name": "Need more info",
+      "body": "Hi {{firstName|there}},\n\nSo we can help, could you send your order number and a short description or photo of the issue?\n\nThanks,\n{{myName}}"
+    },
+    {
+      "key": "resolved",
+      "emoji": "✅",
+      "name": "Resolved",
+      "body": "Hi {{firstName|there}},\n\nGlad we could sort this out. If anything else comes up, just reply to this email.\n\n{{myName}}"
+    }
+  ]
+}

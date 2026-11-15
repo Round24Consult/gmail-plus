@@ -1,14 +1,18 @@
-/**
- * InboxSDK app id, from https://register.inboxsdk.com/ (free). It looks like
- * sdk_<name>_<10 hex characters>. Any other value still loads the SDK, but Gmail
- * shows a red "Invalid AppId" developer banner.
- */
-export const APP_ID = 'sdk_GPlusSettings_a5074a55a5';
-export const APP_NAME = 'Gmail Plus';
+import type { AppConfig } from './configTypes';
+
+// Injected at build time by build.mjs (and by vitest.config.mjs for tests). See docs/CONFIGURATION.md.
+declare const __GP_CONFIG__: AppConfig;
+
+export const CONFIG: AppConfig = __GP_CONFIG__;
+
+export const APP_NAME = CONFIG.appName;
+
+/** InboxSDK needs some string; an unregistered one only triggers its developer banner. */
+export const APP_ID = CONFIG.inboxSdkAppId || `${CONFIG.appSlug}-unregistered`;
 
 export const ROUTES = {
-  pipeline: 'gmail-plus-pipeline',
-  merge: 'gmail-plus-merge',
+  pipeline: `${CONFIG.appSlug}-pipeline`,
+  merge: `${CONFIG.appSlug}-merge`,
 } as const;
 
 export const FOLLOW_UP_ALARM = 'gp-followups';

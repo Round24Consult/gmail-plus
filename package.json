@@ -1,9 +1,9 @@
 {
   "name": "gmail-plus",
-  "version": "0.1.0",
-  "description": "Templates, a light pipeline, follow-ups, CSV export and mail merge inside Gmail.",
+  "version": "0.2.0",
+  "description": "Open-source Chrome extension that adds reply templates, a configurable pipeline, follow-ups, contact export and mail merge to Gmail.",
   "author": "Round24 Consult",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "homepage": "https://github.com/Round24Consult/gmail-plus#readme",
   "repository": {
     "type": "git",
@@ -35,5 +35,13 @@
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"
-  }
+  },
+  "keywords": [
+    "gmail",
+    "chrome-extension",
+    "inboxsdk",
+    "mail-merge",
+    "crm",
+    "templates"
+  ]
 }
